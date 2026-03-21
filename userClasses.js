@@ -187,5 +187,23 @@ class Admin extends User {
     return { postedbyid: this.userid, title, text, date };
   }
 }
+class Course {
+  constructor(courseid, coursecode, coursename, credithours, teacherid) {
+    this.courseid    = courseid;
+    this.coursecode  = coursecode;
+    this.coursename  = coursename;
+    this.credithours = credithours;
+    this.teacherid   = teacherid;
+  }
 
-module.exports = { User, Student, Teacher, Admin };
+  getId()          { return this.courseid; }
+  getCode()        { return this.coursecode; }
+  getName()        { return this.coursename; }
+  getCreditHours() { return this.credithours; }
+
+  display() {
+    console.log(`${this.coursecode} - ${this.coursename} (${this.credithours} cr hrs)`);
+  }
+}
+
+module.exports = { User, Student, Teacher, Admin, Course };

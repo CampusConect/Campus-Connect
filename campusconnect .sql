@@ -4,7 +4,7 @@
 --name varchar(100) not null,
 --email varchar(100)  unique not null,
 --password varchar(200) not null,
-
+--role1 varchar(20) check(role1 in('student','teacher','admin')) not null
 --)
 
 --create table student(

@@ -5,7 +5,7 @@
 --email varchar(100)  unique not null,
 --password varchar(200) not null,
 
---))
+--)
 
 --create table student(
 --studentid int primary key identity(1,1),

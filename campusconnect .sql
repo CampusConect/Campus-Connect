@@ -459,3 +459,22 @@
 --else
 --print 'invalid email or password'
 --end
+
+--triggers start here-------------------------------
+
+
+--trigger 1: auto mark fee challan as overdue
+--fires on insert or update of feechallan
+--if duedate has passed and status is still 'due', set it to 'overdue'
+ 
+--create trigger tr_autooverduechallan
+--on feechallan
+--after insert, update
+--as begin
+--update feechallan
+--set challanstatus = 'overdue'
+--where challanid in (select challanid from inserted)
+--and duedate < cast(getdate() as date)
+--and challanstatus = 'due'
+--end
+

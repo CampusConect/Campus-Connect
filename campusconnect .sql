@@ -17,7 +17,7 @@
 --create table teacher(
 --teacherid int primary key identity(1,1),
 --userid int not null unique,
---department varchar(100),
+--department varchar(100)
 --)
 
 --create table admin1(
@@ -50,6 +50,7 @@
 --studentid int not null,
 --courseid int not null,
 --assignmentmarks float default 0,
+--exammarks float default 0,
 --totalmarks float default 0)
 
 --create table transcript(
@@ -64,6 +65,8 @@
 --studentid int not null,
 --coursefees float not null,
 --totalamount float not null,
+--duedate date not null,
+--payment date,  
 --challanstatus varchar(20) check(challanstatus in('due','paid','overdue')))
 
 --create table courtbooking(
@@ -71,6 +74,7 @@
 --studentid int not null,
 --sport varchar(50),
 --bookingdate date not null,
+--starttime time not null,
 --endtime time not null)
 
 --create table complaint(
@@ -478,3 +482,190 @@
 --and challanstatus = 'due'
 --end
 
+--trigger 2: prevent double court booking with overlapping times
+--fires on insert into courtbooking
+--checks if any existing booking overlaps on same sport and date
+ 
+--create trigger tr_preventdoublebooking
+--on courtbooking
+--instead of insert
+--as begin
+--if exists (
+--select 1 from courtbooking cb
+--join inserted i on cb.sport = i.sport and cb.bookingdate = i.bookingdate
+--where cb.starttime < i.endtime and cb.endtime > i.starttime
+--)
+--begin
+--print 'slot is already booked for this time'
+--return
+--end
+--insert into courtbooking(studentid, sport, bookingdate, starttime, endtime)
+--select studentid, sport, bookingdate, starttime, endtime from inserted
+--print 'court booked successfully'
+--end
+ 
+ 
+--trigger 3: auto calculate totalmarks from assignmentmarks + exammarks
+--fires on insert or update of marks
+--keeps totalmarks always consistent
+ 
+--create trigger tr_calctotalmarks
+--on marks
+--after insert, update
+--as begin
+--update marks
+--set totalmarks = assignmentmarks + exammarks
+--where marksid in (select marksid from inserted)
+--end
+ 
+ 
+--trigger 4: cascade delete user related records
+--fires on delete from users
+--removes related rows from student, teacher, admin1
+ 
+--create trigger tr_cascadedeleteuser
+--on users
+--after delete
+--as begin
+--delete from student where userid in (select userid from deleted)
+--delete from teacher where userid in (select userid from deleted)
+--delete from admin1 where userid in (select userid from deleted)
+--print 'related records deleted successfully'
+--end
+ 
+ 
+--trigger 5: block course registration if student has overdue fee
+--fires on insert into registration
+--cancels insert if student has any overdue challan
+ 
+--create trigger tr_blockregistrationoverdue
+--on registration
+--instead of insert
+--as begin
+--if exists (
+--select 1 from feechallan fc
+--join inserted i on fc.studentid = i.studentid
+--where fc.challanstatus = 'overdue'
+--)
+--begin
+--print 'cannot register, student has overdue fee challan'
+--return
+--end
+--insert into registration(studentid, courseid, semester, registrationdate)
+--select studentid, courseid, semester, registrationdate from inserted
+--print 'course registered successfully'
+--end
+
+--triggers end here--------------------------------------------------
+
+
+--views start here --------------------------------------------------
+
+
+--view 1: student courses
+--shows each student's enrolled courses with teacher name
+ 
+--create view vw_studentcourses as
+--select
+--s.studentid,
+--u.[name] as studentname,
+--s.rollnum,
+--s.program,
+--s.semester,
+--c.coursecode,
+--c.coursename,
+--c.credithours,
+--u2.[name] as teachername,
+--r.semester as enrolledsemester,
+--r.registrationdate
+--from registration r
+--join student s on r.studentid = s.studentid
+--join users u on s.userid = u.userid
+--join course c on r.courseid = c.courseid
+--join teacher t on c.teacherid = t.teacherid
+--join users u2 on t.userid = u2.userid
+ 
+ 
+--view 2: attendance summary
+--shows total present, absent, late counts and attendance percentage per student per course
+ 
+--create view vw_attendancesummary as
+--select
+--s.studentid,
+--u.[name] as studentname,
+--s.rollnum,
+--c.coursecode,
+--c.coursename,
+--count(case when a.attendstatus = 'present' then 1 end) as totalspresent,
+--count(case when a.attendstatus = 'absent' then 1 end) as totalsabsent,
+--count(case when a.attendstatus = 'late' then 1 end) as totalslate,
+--count(*) as totalclasses,
+--cast(
+--count(case when a.attendstatus = 'present' then 1 end) * 100.0 / nullif(count(*), 0)
+--as decimal(5,2)) as attendancepercentage
+--from attendance a
+--join student s on a.studentid = s.studentid
+--join users u on s.userid = u.userid
+--join course c on a.courseid = c.courseid
+--group by s.studentid, u.[name], s.rollnum, c.coursecode, c.coursename
+ 
+ 
+--view 3: student marks
+--shows assignment, exam and total marks per student per course
+ 
+--create view vw_studentmarks as
+--select
+--s.studentid,
+--u.[name] as studentname,
+--s.rollnum,
+--c.coursecode,
+--c.coursename,
+--m.assignmentmarks,
+--m.exammarks,
+--m.totalmarks
+--from marks m
+--join student s on m.studentid = s.studentid
+--join users u on s.userid = u.userid
+--join course c on m.courseid = c.courseid
+ 
+ 
+--view 4: fee status
+--shows each student's fee challan details with name and roll number
+ 
+--create view vw_feestatus as
+--select
+--s.studentid,
+--u.[name] as studentname,
+--s.rollnum,
+--s.program,
+--fc.challanid,
+--fc.coursefees,
+--fc.totalamount,
+--fc.duedate,
+--fc.payment,
+--fc.challanstatus
+--from feechallan fc
+--join student s on fc.studentid = s.studentid
+--join users u on s.userid = u.userid
+ 
+ 
+--view 5: honor list
+--shows students with gpa >= 3.5 from achievement table
+ 
+--create view vw_honorlist as
+--select
+--s.studentid,
+--u.[name] as studentname,
+--s.rollnum,
+--s.program,
+--ac.title1,
+--ac.desc1,
+--ac.semester,
+--ac.gpa,
+--ac.dateawarded
+--from achievement ac
+--join student s on ac.studentid = s.studentid
+--join users u on s.userid = u.userid
+--where ac.gpa >= 3.5
+
+--views end here------------------------------------------

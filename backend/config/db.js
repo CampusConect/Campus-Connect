@@ -1,22 +1,24 @@
-const sql=require('mssql')
-require('dotenv').config()
-const config={
-    server:'localhost\\SQLEXPRESS',
-    database:'CampusConnect',
-    driver:'msnodesqlv8',
-    options:{
-        encrypt:false,
-        trustServerCertificate:true,
-        trustedConnection:true
-    }
-}
-const connectDB=async()=>{
-    try{
-        await sql.connect(config)
-        console.log('connected to sql server successfully')
-    }catch(err){
-        console.error('error connecting to sql server:',err)    
+const sql = require('mssql')
+
+const config = {
+    server: 'LAPTOP-2RBFAKUR\\SQLEXPRESS',
+    database: 'CampusConnect',
+    user: 'campusadmin',
+    password: 'campus123',
+    options: {
+        encrypt: false,
+        trustServerCertificate: true,
+        enableArithAbort: true
     }
 }
 
-module.exports={connectDB,sql}
+const connectDB = async () => {
+    try {
+        await sql.connect(config)
+        console.log('connected to sql server successfully')
+    } catch(err) {
+        console.error('error connecting to sql server:', err.message)
+    }
+}
+
+module.exports = { connectDB, sql }

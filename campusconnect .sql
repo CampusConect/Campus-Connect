@@ -556,6 +556,169 @@
 --print 'course registered successfully'
 --end
 
+--trigger 6: prevent marks entry for unregistered student
+--fires on insert into marks
+--blocks insert if student is not registered in that course
+
+--create trigger tr_blockmarksunregistered
+--on marks
+--instead of insert
+--as begin
+--if not exists (
+--select 1 from registration r
+--join inserted i on r.studentid = i.studentid and r.courseid = i.courseid
+--)
+--begin
+--print 'student is not registered in this course, marks cannot be added'
+--return
+--end
+--insert into marks(studentid, courseid, assignmentmarks, exammarks, totalmarks)
+--select studentid, courseid, assignmentmarks, exammarks, assignmentmarks + exammarks from inserted
+--print 'marks added successfully'
+--end
+
+
+--trigger 7: auto set registration date to today on insert
+--fires on insert into registration
+--forces registrationdate to getdate() even if a different date is passed
+
+--create trigger tr_autoregistrationdate
+--on registration
+--after insert
+--as begin
+--update registration
+--set registrationdate = cast(getdate() as date)
+--where registrationid in (select registrationid from inserted)
+--end
+
+
+--trigger 8: log complaint submission date automatically
+--fires on insert into complaint
+--forces datesubmitted to today regardless of what is passed
+
+--create trigger tr_autocomplaintdate
+--on complaint
+--after insert
+--as begin
+--update complaint
+--set datesubmitted = cast(getdate() as date)
+--where complaintid in (select complaintid from inserted)
+--end
+
+
+--trigger 9: prevent gpa from going above 4.0 in transcript
+--fires on insert or update of transcript
+--rolls back if totalgpa is out of valid range
+
+--create trigger tr_validategpa
+--on transcript
+--after insert, update
+--as begin
+--if exists (
+--select 1 from inserted
+--where totalgpa > 4.0 or totalgpa < 0.0
+--)
+--begin
+--print 'invalid gpa value, must be between 0.0 and 4.0'
+--rollback transaction
+--return
+--end
+--end
+
+
+--trigger 10: prevent achievement gpa from going above 4.0
+--fires on insert or update of achievement
+--rolls back if gpa is out of valid range
+
+--create trigger tr_validateachievementgpa
+--on achievement
+--after insert, update
+--as begin
+--if exists (
+--select 1 from inserted
+--where gpa > 4.0 or gpa < 0.0
+--)
+--begin
+--print 'invalid gpa in achievement, must be between 0.0 and 4.0'
+--rollback transaction
+--return
+--end
+--end
+
+
+--trigger 11: auto set announcement date to today on insert
+--fires on insert into announcement
+--forces dateposted to getdate()
+
+--create trigger tr_autoannouncementdate
+--on announcement
+--after insert
+--as begin
+--update announcement
+--set dateposted = cast(getdate() as date)
+--where announcementid in (select announcementid from inserted)
+--end
+
+
+--trigger 12: prevent duplicate attendance for same student same course same date
+--fires on insert into attendance
+--blocks insert if record already exists for that date
+
+--create trigger tr_preventduplicateattendance
+--on attendance
+--instead of insert
+--as begin
+--if exists (
+--select 1 from attendance a
+--join inserted i on a.studentid = i.studentid
+--and a.courseid = i.courseid
+--and a.attenddate = i.attenddate
+--)
+--begin
+--print 'attendance already marked for this student on this date'
+--return
+--end
+--insert into attendance(studentid, courseid, attenddate, attendstatus)
+--select studentid, courseid, attenddate, attendstatus from inserted
+--print 'attendance marked successfully'
+--end
+
+
+--trigger 13: prevent deleting a course that has registered students
+--fires on delete from course
+--blocks delete if any student is registered in that course
+
+--create trigger tr_preventcoursedelete
+--on course
+--instead of delete
+--as begin
+--if exists (
+--select 1 from registration r
+--join deleted d on r.courseid = d.courseid
+--)
+--begin
+--print 'cannot delete course, students are registered in it'
+--return
+--end
+--delete from course where courseid in (select courseid from deleted)
+--print 'course deleted successfully'
+--end
+
+
+--trigger 14: auto update challan status to paid when payment date is set
+--fires on update of feechallan
+--if payment date is filled in and status is not paid, mark it as paid
+
+--create trigger tr_autopaidstatus
+--on feechallan
+--after update
+--as begin
+--update feechallan
+--set challanstatus = 'paid'
+--where challanid in (select challanid from inserted)
+--and payment is not null
+--and challanstatus != 'paid'
+--end
 --triggers end here--------------------------------------------------
 
 
@@ -668,4 +831,172 @@
 --join users u on s.userid = u.userid
 --where ac.gpa >= 3.5
 
+--view 6: announcements with poster info
+--shows announcements with poster name and role instead of just postedbyid
+
+--create view vw_announcements as
+--select
+--a.announcementid,
+--a.title,
+--a.text1,
+--a.dateposted,
+--u.[name] as postedby,
+--u.role1 as posterrole
+--from announcement a
+--join users u on a.postedbyid = u.userid
+
+--view 7: transcript summary
+--shows full academic history per student with name and roll number
+
+--create view vw_transcriptsummary as
+--select
+--t.transcriptid,
+--s.studentid,
+--u.[name] as studentname,
+--s.rollnum,
+--s.program,
+--t.semester,
+--t.totalgpa,
+--t.generateddate
+--from transcript t
+--join student s on t.studentid = s.studentid
+--join users u on s.userid = u.userid
+
+
+--view 8: student complaint history
+--shows all complaints submitted by each student with their name and roll number
+
+--create view vw_complainthistory as
+--select
+--s.studentid,
+--u.[name] as studentname,
+--s.rollnum,
+--c.complaintid,
+--c.description1,
+--c.datesubmitted
+--from complaint c
+--join student s on c.studentid = s.studentid
+--join users u on s.userid = u.userid
+
+
+--view 9: court booking schedule
+--shows all court bookings with student name, roll number and time details
+
+--create view vw_courtschedule as
+--select
+--cb.bookingid,
+--s.studentid,
+--u.[name] as studentname,
+--s.rollnum,
+--cb.sport,
+--cb.bookingdate,
+--cb.starttime,
+--cb.endtime
+--from courtbooking cb
+--join student s on cb.studentid = s.studentid
+--join users u on s.userid = u.userid
+
+
+--view 10: overdue fee challans
+--shows only students who have overdue fee challans
+
+--create view vw_overduefeestudents as
+--select
+--s.studentid,
+--u.[name] as studentname,
+--s.rollnum,
+--s.program,
+--fc.challanid,
+--fc.totalamount,
+--fc.duedate,
+--fc.challanstatus
+--from feechallan fc
+--join student s on fc.studentid = s.studentid
+--join users u on s.userid = u.userid
+--where fc.challanstatus = 'overdue'
+
+
+--view 11: teacher course list
+--shows each teacher and the courses they are assigned to
+
+--create view vw_teachercourses as
+--select
+--t.teacherid,
+--u.[name] as teachername,
+--t.department,
+--c.courseid,
+--c.coursecode,
+--c.coursename,
+--c.credithours
+--from teacher t
+--join users u on t.userid = u.userid
+--join course c on c.teacherid = t.teacherid
+
+
+--view 12: student full profile
+--shows complete student info combining users and student table
+
+--create view vw_studentprofile as
+--select
+--s.studentid,
+--u.userid,
+--u.[name] as studentname,
+--u.email,
+--s.rollnum,
+--s.program,
+--s.semester
+--from student s
+--join users u on s.userid = u.userid
+
+
+--view 13: marks with grade
+--shows marks and a calculated grade label based on totalmarks out of 100
+
+--create view vw_markswithgrade as
+--select
+--s.studentid,
+--u.[name] as studentname,
+--s.rollnum,
+--c.coursecode,
+--c.coursename,
+--m.assignmentmarks,
+--m.exammarks,
+--m.totalmarks,
+--case
+--when m.totalmarks >= 85 then 'A'
+--when m.totalmarks >= 75 then 'B'
+--when m.totalmarks >= 65 then 'C'
+--when m.totalmarks >= 50 then 'D'
+--else 'F'
+--end as grade
+--from marks m
+--join student s on m.studentid = s.studentid
+--join users u on s.userid = u.userid
+--join course c on m.courseid = c.courseid
+
+
+--view 14: students at risk of attendance shortage
+--shows students whose attendance percentage is below 75 percent
+
+--create view vw_attendancerisk as
+--select
+--s.studentid,
+--u.[name] as studentname,
+--s.rollnum,
+--c.coursecode,
+--c.coursename,
+--count(case when a.attendstatus = 'present' then 1 end) as totalspresent,
+--count(*) as totalclasses,
+--cast(
+--count(case when a.attendstatus = 'present' then 1 end) * 100.0 / nullif(count(*), 0)
+--as decimal(5,2)) as attendancepercentage
+--from attendance a
+--join student s on a.studentid = s.studentid
+--join users u on s.userid = u.userid
+--join course c on a.courseid = c.courseid
+--group by s.studentid, u.[name], s.rollnum, c.coursecode, c.coursename
+--having
+--cast(
+--count(case when a.attendstatus = 'present' then 1 end) * 100.0 / nullif(count(*), 0)
+--as decimal(5,2)) < 75
 --views end here------------------------------------------

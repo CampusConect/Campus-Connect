@@ -339,4 +339,53 @@ catch(err){
 
     
 })
+//view honor list
+router.get('/honor/view',async(req,res)=>{
+    try{
+        const pool=await sql.connect()
+        const result=await pool.request().query('select * from vw_honorlist')
+        res.json({data:result.recordset})
+    }
+    catch(err){
+        res.status(500).json({error:err.message})
+    }
+})
+
+//view complaints
+router.get('/complain/view',async(req,res)=>{
+    try{
+        const pool=await sql.connect()
+        const result=await pool.request().query('select * from vw_complainthistory')
+        res.json({data:result.recordset})
+    }
+    catch(err){
+        res.status(500).json({error:err.message})
+    }
+})
+
+//view courses
+router.get('/course/view',async(req,res)=>{
+    try{
+        const pool=await sql.connect()
+        const result=await pool.request().query('select * from course')
+        res.json({data:result.recordset})
+    }
+    catch(err){
+        res.status(500).json({error:err.message})
+    }
+})
+
+//view fee challan
+router.get('/fee/view/:studentid',async(req,res)=>{
+    try{
+        const pool=await sql.connect()
+        const result=await pool.request()
+        .input('studentid',sql.Int,parseInt(studentid))
+        .query('select * from vw_feestatus where studentid=@studentid')
+        res.json({data:result.recordset})
+    }
+    catch(err){
+        res.status(500).json({error:err.message})
+    }
+})
 module.exports = router

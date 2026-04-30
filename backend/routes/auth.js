@@ -135,7 +135,7 @@ router.get('/marks/view/:studentid/:courseid',async(req,res)=>{
 })
 
 //update marks
-router.post('/marks.update',async(req,res)=>{
+router.post('/marks/update',async(req,res)=>{
     const{studentid,courseid,assignmentmarks,exammarks,totalmarks}=req.body
     try{
         const pool=await sql.connect()
@@ -243,7 +243,7 @@ router.post('/course/register',async(req,res)=>{
         await pool.request()
         .input('studentid',sql.Int,studentid)
         .input('courseid',sql.Int,courseid)
-        .input('semester',sql.Varchar,semester)
+        .input('semester',sql.VarChar,semester)
         .execute('sp_registercourse')
         res.json({message:'Course registered successfully'})
     }
@@ -261,10 +261,82 @@ router.post('/complain/submit',async(req,res)=>{
         await pool.request()
         .input('studentid',sql.Int,studentid)
         .input('description',sql.VarChar,description)
-        .execute('sp_submitcomplain')
+        .execute('sp_submitcomplaint')
         res.json({message:'Complain submitted successfully'})
     }
     catch(err){
         res.status(500).json({error:err.message})
     }
+})
+// update profile
+router.post('/profile/update',async(req,res)=>{
+const{userid,name,email,password}=req.body
+try{
+    const pool=await sql.connect()
+    await pool.request()
+    .input('userid',sql.Int,userid)
+    .input('name',sql.VarChar,name)
+    .input('email',sql.VarChar,email)
+    .input('password',sql.VarChar,password)
+    .execute('sp_updatepersonalinfo')
+    res.json({message:'Personal info updated successfully'})
+}
+catch(err){
+    res.status(500).json({error:err.message})
+}
+
+    
+})
+//post announcement
+router.post('/annoucement/add',async(req,res)=>{
+const{postedbyid,title,text1}=req.body
+try{
+    const pool=await sql.connect()
+    await pool.request()
+    .input('postedbyid',sql.Int,postedbyid)
+    .input('title',sql.VarChar,title)
+    .input('text1',sql.VarChar,text1)
+    .execute('sp_addannouncement')
+    res.json({message:'Annoucement posted Successfully'})
+}
+catch(err){
+    res.status(500).json({error:err.message})
+}
+
+    
+})
+//view announcement
+router.post('/annoucement/view',async(req,res)=>{
+const{postedbyid,title,text1}=req.body
+try{
+    const pool=await sql.connect()
+    const result=await pool.request().query('select * from vw_announcements')
+    res.json({data:result.recordset})
+}
+catch(err){
+    res.status(500).json({error:err.message})
+}
+
+    
+})
+//add honor list
+router.post('/honor/add',async(req,res)=>{
+const{studentid,title1,desc1,semester,gpa}=req.body
+try{
+   const pool=await sql.connect()
+    await pool.request()
+    .input('studentid',sql.Int,postedbyid)
+    .input('title1',sql.VarChar,title1)
+    .input('desc1',sql.VarChar,desc1)
+    .input('semester',sql.Int,semester)
+    .input('gpa',sql.Float,gpa)
+    .execute('sp_addannouncement')
+    res.json({message:'Annoucement posted Successfully'})
+}
+catch(err){
+    res.status(500).json({error:err.message})
+}
+
+    
+})
 module.exports = router

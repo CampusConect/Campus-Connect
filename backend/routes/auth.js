@@ -307,7 +307,6 @@ catch(err){
 })
 //view announcement
 router.get('/announcement/view',async(req,res)=>{
-const{postedbyid,title,text1}=req.body
 try{
     const pool=await sql.connect()
     const result=await pool.request().query('select * from vw_announcements')

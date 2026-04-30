@@ -227,7 +227,7 @@ router.post('/court/book',async(req,res)=>{
         .input('bookingdate',sql.Date,bookingdate)
         .input('starttime',sql.Time,starttime)
         .input('endtime',sql.Time,endtime)
-        .execute('sp_bookcourt')
+        .execute('sp_courtbooking')
         res.json({message:'Court booked successfully'})
     }
     catch(err){
@@ -288,7 +288,7 @@ catch(err){
     
 })
 //post announcement
-router.post('/annoucement/add',async(req,res)=>{
+router.post('/announcement/add',async(req,res)=>{
 const{postedbyid,title,text1}=req.body
 try{
     const pool=await sql.connect()
@@ -306,7 +306,7 @@ catch(err){
     
 })
 //view announcement
-router.post('/annoucement/view',async(req,res)=>{
+router.get('/announcement/view',async(req,res)=>{
 const{postedbyid,title,text1}=req.body
 try{
     const pool=await sql.connect()
@@ -325,13 +325,13 @@ const{studentid,title1,desc1,semester,gpa}=req.body
 try{
    const pool=await sql.connect()
     await pool.request()
-    .input('studentid',sql.Int,postedbyid)
+    .input('studentid',sql.Int,studentid)
     .input('title1',sql.VarChar,title1)
     .input('desc1',sql.VarChar,desc1)
     .input('semester',sql.Int,semester)
     .input('gpa',sql.Float,gpa)
-    .execute('sp_addannouncement')
-    res.json({message:'Annoucement posted Successfully'})
+    .execute('sp_managehonorlist')
+    res.json({message:'Achievement added successfully'})
 }
 catch(err){
     res.status(500).json({error:err.message})
@@ -377,6 +377,7 @@ router.get('/course/view',async(req,res)=>{
 
 //view fee challan
 router.get('/fee/view/:studentid',async(req,res)=>{
+    const{studentid}=req.params
     try{
         const pool=await sql.connect()
         const result=await pool.request()

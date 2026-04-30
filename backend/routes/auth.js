@@ -81,4 +81,190 @@ router.post('/login/admin', async (req, res) => {
     }
 })
 
+//view attendance
+router.get('/view/:studentid/:courseid',async(req,res) =>{
+    const{studentid,courseid}=req.params
+    try{
+        const pool=await sql.connect()
+        const result=await pool.request()
+        .input('studentid',sql.Int,parseInt(studentid))
+        .input('courseid',sql.Int,parseInt(courseid))
+        .execute('sp_viewattendance')
+        res.json({data:result.recordset})
+    }
+    catch(err){
+        res.status(500).json({error:err.message})
+    }
+})
+
+//update attendance
+router.post('/update',async(req,res)=>{
+    const{studentid,courseid,attenddate,attendstatus}=req.body
+    try{
+        const pool = await sql.connect()
+        await pool.request()
+        .input('studentid',sql.Int,studentid)
+        .input('courseid',sql.Int,courseid)
+        .input('attenddate',sql.Date,attenddate)
+        .input('attendstatus',sql.VarChar,attendstatus)
+        .execute('sp_updateattendance')
+        res.json({message:'attendance updated successfully'})
+    }
+    catch(err){
+        res.status(500).json({error:err.message})
+    }
+
+})
+
+
+//view marks
+
+router.get('/marks/view/:studentid/:courseid',async(req,res)=>{
+    const{studentid,courseid}=req.params
+    try{
+        const pool =await sql.connect()
+        const result=await pool.request()
+        .input('studentid',sql.Int,studentid)
+        .input('courseid',sql.Int,courseid)
+        .execute('sp_viewmarks')
+        res.json({data:result.recordset})
+    }
+    catch(err){
+        res.status(500).json({error:err.message})
+    }
+})
+
+//update marks
+router.post('/marks.update',async(req,res)=>{
+    const{studentid,courseid,assignmentmarks,exammarks,totalmarks}=req.body
+    try{
+        const pool=await sql.connect()
+        await pool.request()
+        .input('studentid',sql.Int,studentid)
+        .input('courseid',sql.Int,courseid)
+        .input('assignmentmarks',sql.Int,assignmentmarks)
+        .input('exammarks',sql.Int,exammarks)
+        .input('totalmarks',sql.Int,totalmarks)
+        .execute('sp_updatemarks')
+        res.json({message:'Marks updated successfully'})
+    }
+    catch(err){
+        res.status(500).json({error:err.message})
+    }
+})
+
+//get transcript
+router.get('/transcript/:studentid',async(req,res)=>{
+    const{studentid}=req.params
+    try{
+        const pool=await sql.connect()
+        const result=await pool.request()
+        .input('studentid',sql.Int,studentid)
+        .execute('sp_gettranscript')
+        res.json({data:result.recordset})
+    }
+    catch(err){
+        res.status(500).json({error:err.message})
+    }
+})
+
+//generate transcript
+router.post('/transcript/generate',async(req,res)=>{
+    const{studentid,semester,totalgpa}=req.body
+    try{
+        const pool=await sql.connect()
+        await pool.request()
+        .input('studentid',sql.Int,studentid)
+        .input('semester',sql.Int,semester)
+        .input('totalgpa',sql.Float,totalgpa)
+        .execute('sp_generatetranscript')
+        res.json({message:'Transcript generated successfully'})
+    }
+    catch(err){
+        res.status(500).json({error:err.message})
+    }
+})
+
+//generate fee challan
+router.post('/fee/generate',async(req,res)=>{
+    const{studentid,duedate}=req.body
+    try{
+        const pool=await sql.connect()
+        await pool.request()
+        .input('studentid',sql.Int,studentid)
+        .input('duedate',sql.Date,duedate)
+        .execute('sp_generatefeechallan')
+        res.json({message:'Fee challan generated successfully'})
+    }
+    catch(err){
+        res.status(500).json({error:err.message})
+    }
+})
+//pay challan
+router.post('/fee/pay',async(req,res)=>{
+    const{studentid,challanid}=req.body
+    try{
+        const pool=await sql.connect()
+        await pool.request()
+        .input('studentid',sql.Int,studentid)
+        .input('challanid',sql.Int,challanid)
+        .execute('sp_payfeechallan')
+        res.json({message:'Fee challan paid successfully'})
+    }
+    catch(err){
+        res.status(500).json({error:err.message})
+    }
+})
+
+//court booking
+router.post('/court/book',async(req,res)=>{
+    const{studentid,sport,bookingdate,starttime,endtime}=req.body
+    try{
+        const pool=await sql.connect()
+        await pool.request()
+        .input('studentid',sql.Int,studentid)
+        .input('sport',sql.VarChar,sport)
+        .input('bookingdate',sql.Date,bookingdate)
+        .input('starttime',sql.Time,starttime)
+        .input('endtime',sql.Time,endtime)
+        .execute('sp_bookcourt')
+        res.json({message:'Court booked successfully'})
+    }
+    catch(err){
+        res.status(500).json({error:err.message})
+    }
+})
+
+//course register
+router.post('/course/register',async(req,res)=>{
+    const{studentid,courseid,semester}=req.body
+    try{
+        const pool=await sql.connect()
+        await pool.request()
+        .input('studentid',sql.Int,studentid)
+        .input('courseid',sql.Int,courseid)
+        .input('semester',sql.Varchar,semester)
+        .execute('sp_registercourse')
+        res.json({message:'Course registered successfully'})
+    }
+    catch(err){
+        res.status(500).json({error:err.message})
+    }
+})
+
+//submit complain
+router.post('/complain/submit',async(req,res)=>{
+    const{studentid,description}=req.body
+    try
+    {
+        const pool=await sql.connect()
+        await pool.request()
+        .input('studentid',sql.Int,studentid)
+        .input('description',sql.VarChar,description)
+        .execute('sp_submitcomplain')
+        res.json({message:'Complain submitted successfully'})
+    }
+    catch(err){
+        res.status(500).json({error:err.message})
+    }
 module.exports = router

@@ -44,4 +44,4 @@ await this.achievementRepo.deleteAchievement(achievementid)
 return { message: 'achievement deleted successfully' }
 }
 }
-module.exports = new
+module.exports = new AchievementService()

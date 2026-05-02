@@ -1,11 +1,11 @@
-const { db, sql } = require(’../config/db’)
+const { db, sql } = require('../config/db')
 
 class complaint {
-async submitComplaint(studentid, description1) {
+async submitComplaint(studentid, description) {
 const pool = await db.connect()
 await pool.request()
-.input(‘studentid’, sql.Int, studentid)
-.input(‘description1’, sql.VarChar, description1)
+.input('studentid', sql.Int, studentid)
+.input('description1', sql.VarChar, description)
 .query(`insert into complaint(studentid,description1,datesubmitted) values(@studentid,@description1,getdate())`)
 }
 

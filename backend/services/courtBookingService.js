@@ -51,4 +51,4 @@ await this.bookingRepo.cancelBooking(bookingid)
 return { message: 'booking cancelled successfully' }
 }
 }
-module.exports = new
+module.exports = new CourtBookingService()

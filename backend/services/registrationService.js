@@ -54,4 +54,4 @@ await this.registrationRepo.deleteRegistration(registrationid)
 return { message: 'registration dropped successfully' }
 }
 }
-module.exports = new
+module.exports = new RegistrationService()

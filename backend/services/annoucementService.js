@@ -48,4 +48,4 @@ await this.announcementRepo.deleteAnnouncement(announcementid)
 return { message: 'announcement deleted successfully' }
 }
 }
-module.exports = new
+module.exports = new AnnouncementService()

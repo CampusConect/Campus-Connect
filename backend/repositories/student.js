@@ -1,7 +1,7 @@
 const {db,sql} = require('../config/db')
 
 class student{
-    async createstudent(userid,rollnum,program,semester){
+    async createStudent(userid,rollnum,program,semester){
         const pool=await db.connect()
         const result=await pool.request()
         .input('userid',sql.Int,userid)
@@ -13,14 +13,14 @@ class student{
         return result
     }
 
-    async getstudentbyuser(userid){
+    async getStudentByUserId(userid){
         const pool=await db.connect()
         const result=await pool.request()
         .input('userid',sql.Int,userid)
         .query(`select * from student where userid=@userid`)
         return result.recordset[0]
     }
-    async getstudentbyid(studentid){
+    async getStudentById(studentid){
         const pool=await db.connect()
         const result=await pool.request()
         .input('studentid',sql.Int,studentid)

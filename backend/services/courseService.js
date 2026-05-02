@@ -63,4 +63,4 @@ await this.courseRepo.deleteCourse(courseid)
 return { message: 'course deleted successfully' }
 }
 }
-module.exports = new
+module.exports = new CourseService()

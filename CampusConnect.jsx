@@ -85,17 +85,29 @@ const css = `
 `;
 
 /* ── STORAGE ──────────────────────────────────────────────────── */
-const DB = {
-  get: (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
-  set: (k, v) => localStorage.setItem(k, JSON.stringify(v)),
-  getUsers: () => DB.get("cc_users") || [],
-  saveUsers: (u) => DB.set("cc_users", u),
-  getSession: () => DB.get("cc_session"),
-  saveSession: (u) => DB.set("cc_session", u),
-  clearSession: () => localStorage.removeItem("cc_session"),
-  getData: (key) => DB.get("cc_" + key) || [],
-  setData: (key, v) => DB.set("cc_" + key, v),
+/* ── API ─────────────────────────────────────────────────────── */
+const API = "http://localhost:5000/api";
+
+const api = {
+  post: async (url, data) => {
+    const res = await fetch(`${API}${url}`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) });
+    return res.json();
+  },
+  get: async (url) => {
+    const res = await fetch(`${API}${url}`);
+    return res.json();
+  },
+  put: async (url, data) => {
+    const res = await fetch(`${API}${url}`, { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) });
+    return res.json();
+  },
+  del: async (url) => {
+    const res = await fetch(`${API}${url}`, { method:"DELETE" });
+    return res.json();
+  }
 };
+
+let SESSION = null;
 
 /* ── AUTH ─────────────────────────────────────────────────────── */
 function Auth({ onLogin }) {

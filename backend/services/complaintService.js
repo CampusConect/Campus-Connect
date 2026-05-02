@@ -49,4 +49,4 @@ await this.complaintRepo.deleteComplaint(complaintid)
 return { message: 'complaint deleted successfully' }
 }
 }
-module.exports = new
+module.exports = new ComplaintService()

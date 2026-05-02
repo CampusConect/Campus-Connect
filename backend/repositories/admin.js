@@ -25,4 +25,4 @@ class admin {
     }
 }
 
-module.exports = AdminRepository
+module.exports = admin

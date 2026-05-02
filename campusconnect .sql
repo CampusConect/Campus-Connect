@@ -11,7 +11,7 @@ create table student(
 studentid int primary key identity(1,1),
 userid int not null unique,
 rollnum varchar(20) not null unique,
-semester int check (semester>0 and semester<10), till 9 allowed for repeats
+semester int check (semester>0 and semester<10),-- till 9 allowed for repeats
 program varchar(100))
 
 create table teacher(
@@ -103,7 +103,7 @@ dateawarded date)
 
 alter table achievement add constraint fk_achievement foreign key (studentid) references student(studentid) on update cascade on delete no action
 
-time to write sample data for testing
+--time to write sample data for testing
 
 
 insert into users([name],email,[password],role1) values ('saad eehab','saadeehab@gmail.com','1234','admin')
@@ -192,9 +192,13 @@ create procedure sp_loginstudent
 as
 begin
 if exists(select * from users where email=@email and [password]=@password and role1='student')
-print 'login successful'
+begin
+    print 'login successful'
+end
 else
+begin
 print 'invalid email or password'
+end
 end
 
 create procedure sp_signupteacher
@@ -219,9 +223,14 @@ create procedure sp_loginteacher
 @password varchar(200)
 as begin
 if exists(select * from users where email=@email and [password]=@password and role1='teacher')
-print'login successful'
+begin
+
+    print 'login successful'
+end
 else
-print'invlaid email or password'
+begin
+    print 'invlaid email or password'
+end
 end
 
 create procedure sp_viewattendance
@@ -254,7 +263,7 @@ update attendance set attendstatus=@attendstatus
 where studentid=@studentid and courseid=@courseid and attenddate=@attenddate
 else
 insert into attendance(studentid,courseid,attenddate,attendstatus) values(@studentid,@courseid,@attenddate,@attendstatus)
-print'attenddance updated successfully'
+print 'attenddance updated successfully'
 end
 
 create procedure sp_viewmarks
@@ -340,7 +349,7 @@ print 'no courses registered for this student'
 return
 end
 insert into feechallan(studentid,coursefees,totalamount,duedate,payment,challanstatus) values (@studentid,@totalamount,@totalamount,@duedate,null,'due')
-print'fee challan generated successfully'
+print 'fee challan generated successfully'
 end
 
 create procedure sp_payfeechallan
@@ -367,7 +376,8 @@ create procedure sp_courtbooking
 @starttime time,
 @endtime time
 as begin
-if exists (select * from courtbooking where sport=@sport and bookingdate=@bookingdate and starttime=@starttime)
+if exists (select * from courtbooking where sport=@sport and bookingdate=@bookingdate 
+           and starttime < @endtime and endtime > @starttime)
 begin
 print 'solt is already booked'
 return end
@@ -381,7 +391,7 @@ create procedure sp_registercourse
     @semester varchar(20)
 as
 begin
-    if exists (select 1 from feechallan where studentid=@studentid and challanstatus='due')
+   if exists (select 1 from feechallan where studentid=@studentid and challanstatus in('due','overdue'))
     begin
         print 'Fee not cleared, cannot register'
         return
@@ -459,9 +469,13 @@ create procedure sp_loginadmin
 @password varchar(200)
 as begin
 if exists (select * from users where email=@email and [password]=@password and role1='admin')
-print 'login successful'
+begin
+    print 'login successful'
+end
 else
+begin
 print 'invalid email or password'
+end
 end
 
 --triggers start here-------------------------------
@@ -480,6 +494,7 @@ set challanstatus = 'overdue'
 where challanid in (select challanid from inserted)
 and duedate < cast(getdate() as date)
 and challanstatus = 'due'
+and payment is null
 end
 
 --trigger 2: prevent double court booking with overlapping times

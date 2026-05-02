@@ -1,3 +1,6 @@
+const cors = require('cors');
+app.use(cors()); 
+
 const express =require('express')
 const router = express.Router()
 const { sql }=require('../config/db')

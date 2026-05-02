@@ -12,13 +12,28 @@ const config = {
     }
 }
 
-const connectDB = async () => {
-    try {
-        await sql.connect(config)
-        console.log('connected to sql server successfully')
-    } catch(err) {
-        console.error('error connecting to sql server:', err.message)
+class database{
+    constructor(){
+        if(databse.instance){
+            return database.instance
+        }
+        this.pool=null
+        database.instance=this
+    }
+
+    async connect(){
+        if(this.pool){
+            return this.pool
+        }
+        this.pool=await sql.connect(config)
+        console.log('connected to sql server')
+        return this.pool
+    }
+
+    getpool()
+    {
+        return this.pool
     }
 }
-
-module.exports = { connectDB, sql }
+const db=new database()
+module.exports = { db, sql }

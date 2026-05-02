@@ -1,14 +1,14 @@
-const { db, sql } = require(’../config/db’)
+const { db, sql } = require('../config/db')
 
 class achievement {
 async addAchievement(studentid, title1, desc1, semester, gpa) {
 const pool = await db.connect()
 await pool.request()
-.input(‘studentid’, sql.Int, studentid)
-.input(‘title1’, sql.VarChar, title1)
-.input(‘desc1’, sql.VarChar, desc1)
-.input(‘semester’, sql.Int, semester)
-.input(‘gpa’, sql.Float, gpa)
+.input('studentid', sql.Int, studentid)
+.input('title1', sql.VarChar, title1)
+.input('desc1', sql.VarChar, desc1)
+.input('semester', sql.Int, semester)
+.input('gpa', sql.Float, gpa)
 .query(`insert into achievement(studentid,title1,desc1,semester,gpa,dateawarded) values(@studentid,@title1,@desc1,@semester,@gpa,getdate())`)
 }
 

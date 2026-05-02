@@ -1,13 +1,13 @@
-const { db, sql } = require(’../config/db’)
+const { db, sql } = require('../config/db')
 
 class course {
 async createCourse(coursecode, coursename, credithours, teacherid) {
 const pool = await db.connect()
 const result = await pool.request()
-.input(‘coursecode’, sql.VarChar, coursecode)
-.input(‘coursename’, sql.VarChar, coursename)
-.input(‘credithours’, sql.Int, credithours)
-.input(‘teacherid’, sql.Int, teacherid)
+.input('coursecode', sql.VarChar, coursecode)
+.input('coursename', sql.VarChar, coursename)
+.input('credithours', sql.Int, credithours)
+.input('teacherid', sql.Int, teacherid)
 .query(`insert into course(coursecode,coursename,credithours,teacherid) values(@coursecode,@coursename,@credithours,@teacherid)`)
 return result
 }

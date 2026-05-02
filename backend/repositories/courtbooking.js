@@ -1,14 +1,14 @@
-const { db, sql } = require(’../config/db’)
+const { db, sql } = require('../config/db')
 
 class courtbooking {
 async bookCourt(studentid, sport, bookingdate, starttime, endtime) {
 const pool = await db.connect()
 await pool.request()
-.input(‘studentid’, sql.Int, studentid)
-.input(‘sport’, sql.VarChar, sport)
-.input(‘bookingdate’, sql.Date, bookingdate)
-.input(‘starttime’, sql.Time, starttime)
-.input(‘endtime’, sql.Time, endtime)
+.input('studentid', sql.Int, studentid)
+.input('sport', sql.VarChar, sport)
+.input('bookingdate', sql.Date, bookingdate)
+.input('starttime', sql.Time, starttime)
+.input('endtime', sql.Time, endtime)
 .query(`insert into courtbooking(studentid,sport,bookingdate,starttime,endtime) values(@studentid,@sport,@bookingdate,@starttime,@endtime)`)
 }
 

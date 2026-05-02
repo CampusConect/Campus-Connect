@@ -14,7 +14,7 @@ const config = {
 
 class database{
     constructor(){
-        if(databse.instance){
+        if(database.instance){
             return database.instance
         }
         this.pool=null

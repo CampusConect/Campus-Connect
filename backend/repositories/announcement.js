@@ -1,12 +1,12 @@
-const { db, sql } = require(’../config/db’)
+const { db, sql } = require('../config/db')
 
 class announcement {
 async addAnnouncement(postedbyid, title, text1) {
 const pool = await db.connect()
 await pool.request()
-.input(‘postedbyid’, sql.Int, postedbyid)
-.input(‘title’, sql.VarChar, title)
-.input(‘text1’, sql.VarChar, text1)
+.input('postedbyid', sql.Int, postedbyid)
+.input('title', sql.VarChar, title)
+.input('text1', sql.VarChar, text1)
 .query(`insert into announcement(postedbyid,title,text1,dateposted) values(@postedbyid,@title,@text1,getdate())`)
 }
 

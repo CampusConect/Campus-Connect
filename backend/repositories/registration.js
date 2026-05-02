@@ -1,12 +1,12 @@
-const { db, sql } = require(’../config/db’)
+const { db, sql } = require('../config/db')
 
 class registration {
 async registerCourse(studentid, courseid, semester) {
 const pool = await db.connect()
 await pool.request()
-.input(‘studentid’, sql.Int, studentid)
-.input(‘courseid’, sql.Int, courseid)
-.input(‘semester’, sql.VarChar, semester)
+.input('studentid', sql.Int, studentid)
+.input('courseid', sql.Int, courseid)
+.input('semester', sql.VarChar, semester)
 .query(`insert into registration(studentid,courseid,semester,registrationdate) values(@studentid,@courseid,@semester,getdate())`)
 }
 

@@ -53,4 +53,4 @@ class FeeService {
     }
 }
 
-module.exports = FeeService
+module.exports = new FeeService()

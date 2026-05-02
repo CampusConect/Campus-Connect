@@ -45,4 +45,4 @@ class TranscriptService {
     }
 }
 
-module.exports = TranscriptService
+module.exports = new TranscriptService()

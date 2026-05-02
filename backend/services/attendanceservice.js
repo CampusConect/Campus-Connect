@@ -37,4 +37,4 @@ class AttendanceService {
     }
 }
 
-module.exports = AttendanceService
+module.exports = new AttendanceService()

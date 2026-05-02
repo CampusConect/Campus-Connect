@@ -37,4 +37,4 @@ class MarksService {
     }
 }
 
-module.exports = MarksService
+module.exports = new MarksService()

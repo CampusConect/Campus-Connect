@@ -1,10 +1,10 @@
 const sql = require('mssql')
 
 const config = {
-    server: 'LAPTOP-2RBFAKUR\\SQLEXPRESS',
-    database: 'CampusConnect',
-    user: 'campusadmin',
-    password: 'campus123',
+    server: 'SQL1001.site4now.net',
+    database: 'db_ac8e32_campusconnect',
+    user: 'db_ac8e32_campusconnect_admin',
+    password: 'Saadeehab12',
     options: {
         encrypt: false,
         trustServerCertificate: true,

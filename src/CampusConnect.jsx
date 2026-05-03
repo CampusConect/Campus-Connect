@@ -22,16 +22,67 @@ const Icons = {
 };
 
 /* ── STORAGE ──────────────────────────────────────────────────── */
-const DB = {
-  get: (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
-  set: (k, v) => localStorage.setItem(k, JSON.stringify(v)),
-  getUsers: () => DB.get("cc_users") || [],
-  saveUsers: (u) => DB.set("cc_users", u),
-  getSession: () => DB.get("cc_session"),
-  saveSession: (u) => DB.set("cc_session", u),
-  clearSession: () => localStorage.removeItem("cc_session"),
-  getData: (key) => DB.get("cc_" + key) || [],
-  setData: (key, v) => DB.set("cc_" + key, v),
+/* ── API CLIENT ───────────────────────────────────────────────── */
+const API_URL = "http://localhost:5000/api";
+
+async function apiCall(path, method = "GET", body) {
+  const opts = { method, headers: { "Content-Type": "application/json" } };
+  if (body) opts.body = JSON.stringify(body);
+  let res;
+  try { res = await fetch(`${API_URL}${path}`, opts); }
+  catch { throw new Error("Cannot reach server. Make sure backend is running on port 5000."); }
+  let data = {};
+  try { data = await res.json(); } catch {}
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
+}
+
+const Session = {
+  get: () => { try { return JSON.parse(localStorage.getItem("cc_session")); } catch { return null; } },
+  save: (u) => localStorage.setItem("cc_session", JSON.stringify(u)),
+  clear: () => localStorage.removeItem("cc_session"),
+};
+
+const api = {
+  signupStudent: (b) => apiCall("/auth/signup/student", "POST", b),
+  loginStudent:  (b) => apiCall("/auth/login/student",  "POST", b),
+  signupTeacher: (b) => apiCall("/auth/signup/teacher", "POST", b),
+  loginTeacher:  (b) => apiCall("/auth/login/teacher",  "POST", b),
+  loginAdmin:    (b) => apiCall("/auth/login/admin",    "POST", b),
+  updateProfile: (b) => apiCall("/profile/update",      "PUT",  b),
+
+  viewAttendance:   (sid, cid) => apiCall(`/attendance/view/${sid}/${cid}`),
+  updateAttendance: (b) => apiCall("/attendance/update", "POST", b),
+
+  viewMarks:   (sid, cid) => apiCall(`/marks/view/${sid}/${cid}`),
+  updateMarks: (b) => apiCall("/marks/update", "POST", b),
+
+  getTranscript:      (sid) => apiCall(`/transcript/get/${sid}`),
+  generateTranscript: (b)   => apiCall("/transcript/generate", "POST", b),
+
+  generateFee: (b)   => apiCall("/fee/generate", "POST", b),
+  payFee:      (b)   => apiCall("/fee/pay",      "POST", b),
+  viewFee:     (sid) => apiCall(`/fee/view/${sid}`),
+
+  createCourse:     (b)   => apiCall("/course/create", "POST", b),
+  getAllCourses:    ()    => apiCall("/course/view"),
+  registerCourse:   (b)   => apiCall("/course/register", "POST", b),
+  getRegistrations: (sid) => apiCall(`/course/registrations/${sid}`),
+
+  bookCourt:         (b)   => apiCall("/court/book", "POST", b),
+  viewCourtBookings: (sid) => apiCall(`/court/view/${sid}`),
+  cancelBooking:     (bid) => apiCall(`/court/cancel/${bid}`, "DELETE"),
+
+  submitComplaint:  (b)   => apiCall("/complaint/submit", "POST", b),
+  getAllComplaints: ()    => apiCall("/complaint/view"),
+  getMyComplaints:  (sid) => apiCall(`/complaint/view/${sid}`),
+
+  addAnnouncement:  (b) => apiCall("/announcement/add", "POST", b),
+  getAnnouncements: ()  => apiCall("/announcement/view"),
+
+  addAchievement:  (b)   => apiCall("/achievement/add", "POST", b),
+  getAchievements: (sid) => apiCall(`/achievement/view/${sid}`),
+  getHonorList:    ()    => apiCall("/honor/view"),
 };
 
 /* ── AUTH ─────────────────────────────────────────────────────── */
@@ -43,31 +94,50 @@ function Auth({ onLogin }) {
   const [ok, setOk] = useState("");
   const set = (k) => (e) => { setErr(""); setForm(f => ({ ...f, [k]: e.target.value })); };
 
-  const signup = () => {
-    if (!form.name.trim() || !form.email.trim() || !form.password.trim()) return setErr("All fields are required.");
-    if (role === "student" && !form.rollno.trim()) return setErr("Roll number is required.");
-    if (role === "teacher" && !form.empId.trim()) return setErr("Employee ID is required.");
-    const users = DB.getUsers();
-    if (users.find(u => u.email === form.email.trim().toLowerCase())) return setErr("Email already registered.");
-    const user = {
-      id: Date.now().toString(), name: form.name.trim(),
-      email: form.email.trim().toLowerCase(), password: form.password, role,
-      ...(role === "student" ? { rollno: form.rollno.trim(), program: "", semester: 1 } : {}),
-      ...(role === "teacher" ? { empId: form.empId.trim(), dept: "" } : {}),
-    };
-    DB.saveUsers([...users, user]);
-    DB.saveSession(user);
-    setOk("Account created successfully.");
-    setTimeout(() => onLogin(user), 500);
+  const buildUser = (res, r) => {
+    const u = res.user || {};
+    const base = { userid: u.userid, name: u.name, email: u.email, role: r };
+    if (r === "student" && res.student) {
+      return { ...base, studentid: res.student.studentid, rollno: res.student.rollnum, program: res.student.program, semester: res.student.semester };
+    }
+    if (r === "teacher" && res.teacher) {
+      return { ...base, teacherid: res.teacher.teacherid, dept: res.teacher.department };
+    }
+    return base;
   };
 
-  const login = () => {
+  const signup = async () => {
+    if (!form.name.trim() || !form.email.trim() || !form.password.trim()) return setErr("All fields are required.");
+    if (role === "student" && !form.rollno.trim()) return setErr("Roll number is required.");
+    if (role === "teacher" && !form.empId.trim()) return setErr("Department is required.");
+    if (role === "admin") return setErr("Admin accounts must be created in the database.");
+    try {
+      if (role === "student") {
+        await api.signupStudent({ name: form.name.trim(), email: form.email.trim().toLowerCase(), password: form.password, rollnum: form.rollno.trim(), program: "Not set", semester: 1 });
+      } else {
+        await api.signupTeacher({ name: form.name.trim(), email: form.email.trim().toLowerCase(), password: form.password, department: form.empId.trim() });
+      }
+      setOk("Account created. Logging you in...");
+      const loginRes = role === "student"
+        ? await api.loginStudent({ email: form.email.trim().toLowerCase(), password: form.password })
+        : await api.loginTeacher({ email: form.email.trim().toLowerCase(), password: form.password });
+      const user = buildUser(loginRes, role);
+      Session.save(user);
+      setTimeout(() => onLogin(user), 400);
+    } catch (e) { setErr(e.message); }
+  };
+
+  const login = async () => {
     if (!form.email.trim() || !form.password.trim()) return setErr("Enter email and password.");
-    const users = DB.getUsers();
-    const user = users.find(u => u.email === form.email.trim().toLowerCase() && u.password === form.password);
-    if (!user) return setErr("Invalid credentials.");
-    DB.saveSession(user);
-    onLogin(user);
+    try {
+      const payload = { email: form.email.trim().toLowerCase(), password: form.password };
+      const res = role === "student" ? await api.loginStudent(payload)
+                : role === "teacher" ? await api.loginTeacher(payload)
+                : await api.loginAdmin(payload);
+      const user = buildUser(res, role);
+      Session.save(user);
+      onLogin(user);
+    } catch (e) { setErr(e.message); }
   };
 
   return (
@@ -192,17 +262,21 @@ function Profile({ user, onUpdate }) {
   const [form, setForm] = useState({ name:user.name, email:user.email, phone:user.phone||"", program:user.program||"", dept:user.dept||"", semester:user.semester||1, newPass:"" });
   const [ok, setOk] = useState(""); const [err, setErr] = useState("");
   const s = k => e => setForm(f=>({...f,[k]:e.target.value}));
-  const save = () => {
+  const save = async () => {
     if (!form.name.trim()||!form.email.trim()) return setErr("Name and email are required fields.");
-    const users = DB.getUsers();
-    const idx = users.findIndex(u=>u.id===user.id);
-    if (idx===-1) return setErr("User account not found.");
-    const updated = {...users[idx], name:form.name.trim(), email:form.email.trim().toLowerCase(), phone:form.phone.trim(), program:form.program.trim(), dept:form.dept.trim(), semester:Number(form.semester)};
-    if (form.newPass.trim()) updated.password = form.newPass.trim();
-    users[idx] = updated;
-    DB.saveUsers(users); DB.saveSession(updated);
-    setOk("Profile settings updated successfully."); setErr(""); onUpdate(updated);
-    setTimeout(()=>setOk(""),4000);
+    try {
+      await api.updateProfile({
+        userid: user.userid,
+        name: form.name.trim(),
+        email: form.email.trim().toLowerCase(),
+        password: form.newPass.trim() || undefined,
+      });
+      const updated = { ...user, name: form.name.trim(), email: form.email.trim().toLowerCase() };
+      Session.save(updated);
+      onUpdate(updated);
+      setOk("Profile updated successfully."); setErr("");
+      setTimeout(()=>setOk(""),4000);
+    } catch (e) { setErr(e.message); }
   };
   return (
     <div className="fade-in">
@@ -246,22 +320,39 @@ function Profile({ user, onUpdate }) {
 /* ── ATTENDANCE ───────────────────────────────────────────────── */
 function Attendance({ user }) {
   const isTeacher = user.role==="teacher";
-  const allAtt = DB.getData("att_all");
-  const students = DB.getUsers().filter(u=>u.role==="student");
-  const [course, setCourse] = useState(""); const [date, setDate] = useState(new Date().toISOString().slice(0,10));
-  const [status, setStatus] = useState("Present"); const [selStudent, setSelStudent] = useState(""); const [ok, setOk] = useState("");
-  const [records, setRecords] = useState(allAtt);
+  const [courseId, setCourseId] = useState("");
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState(""); const [ok, setOk] = useState("");
+  const [form, setForm] = useState({ studentid:"", courseid:"", date:new Date().toISOString().slice(0,10), status:"Present" });
+  const s = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
 
-  const markAtt = () => {
-    if (!course.trim()||!selStudent) return;
-    const entry = { id:Date.now().toString(), teacherId:user.id, teacherName:user.name, studentId:selStudent, course:course.trim(), date, status };
-    const updated = [...records, entry];
-    DB.setData("att_all", updated); setRecords(updated);
-    setOk("Attendance record established."); setTimeout(()=>setOk(""),3000);
+  const loadAttendance = async () => {
+    if (!courseId) return setErr("Enter a course ID first.");
+    setLoading(true); setErr("");
+    try {
+      const res = await api.viewAttendance(user.studentid, courseId);
+      setRecords(res.data || []);
+    } catch (e) { setErr(e.message); setRecords([]); }
+    finally { setLoading(false); }
+  };
+
+  const markAtt = async () => {
+    if (!form.studentid || !form.courseid) return setErr("Student ID and Course ID required.");
+    setErr("");
+    try {
+      await api.updateAttendance({
+        teacherid: user.teacherid,
+        studentid: Number(form.studentid),
+        courseid: Number(form.courseid),
+        attenddate: form.date,
+        attendstatus: form.status,
+      });
+      setOk("Attendance recorded."); setTimeout(()=>setOk(""),3000);
+    } catch (e) { setErr(e.message); }
   };
 
   if (!isTeacher) {
-    const mine = records.filter(r=>r.studentId===user.id);
     return (
       <div className="fade-in">
         <div className="page-header">
@@ -270,26 +361,37 @@ function Attendance({ user }) {
             <p className="page-subtitle">Review your daily class attendance</p>
           </div>
         </div>
-        {mine.length===0 ? 
+        <div className="card" style={{ maxWidth: 640 }}>
+          {err && <div className="alert alert-error"><Icons.CheckCircle />{err}</div>}
+          <div className="form-grid">
+            <div className="form-group">
+              <label>Course ID</label>
+              <input className="input-field" type="number" placeholder="e.g. 1" value={courseId} onChange={e=>setCourseId(e.target.value)} />
+            </div>
+            <div className="form-group" style={{ display:"flex", alignItems:"flex-end" }}>
+              <button className="btn-primary" onClick={loadAttendance} disabled={loading}>{loading ? "Loading..." : "View Records"}</button>
+            </div>
+          </div>
+        </div>
+        {records.length===0 ? 
           <div className="card empty-state">
             <Icons.Calendar className="icon-xl" />
-            <div className="empty-text">No attendance records have been registered.</div>
+            <div className="empty-text">No attendance records found.</div>
           </div>
         : <div className="card" style={{ padding: 0, overflow: "hidden" }}>
             <div className="table-wrapper">
               <table>
-                <thead><tr><th>Course</th><th>Date</th><th>Status</th><th>Instructor</th></tr></thead>
+                <thead><tr><th>Course ID</th><th>Date</th><th>Status</th></tr></thead>
                 <tbody>
-                  {mine.map(r=>(
-                    <tr key={r.id}>
-                      <td style={{fontWeight:500}}>{r.course}</td>
-                      <td>{r.date}</td>
+                  {records.map((r,i)=>(
+                    <tr key={i}>
+                      <td style={{fontWeight:500}}>{r.courseid}</td>
+                      <td>{r.attenddate ? new Date(r.attenddate).toLocaleDateString() : "—"}</td>
                       <td>
-                        <span className={`badge ${r.status==="Present"?"badge-success":r.status==="Absent"?"badge-danger":"badge-warning"}`}>
-                          {r.status}
+                        <span className={`badge ${r.attendstatus==="Present"?"badge-success":r.attendstatus==="Absent"?"badge-danger":"badge-warning"}`}>
+                          {r.attendstatus}
                         </span>
                       </td>
-                      <td>{r.teacherName}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -301,7 +403,6 @@ function Attendance({ user }) {
     );
   }
 
-  const myMarked = records.filter(r=>r.teacherId===user.id);
   return (
     <div className="fade-in">
       <div className="page-header">
@@ -310,85 +411,66 @@ function Attendance({ user }) {
           <p className="page-subtitle">Submit daily attendance for enrolled students</p>
         </div>
       </div>
-      
       <div className="card" style={{ maxWidth: 640 }}>
-        {ok&&<div className="alert alert-success"><Icons.CheckCircle />{ok}</div>}
-        
+        {ok && <div className="alert alert-success"><Icons.CheckCircle />{ok}</div>}
+        {err && <div className="alert alert-error"><Icons.CheckCircle />{err}</div>}
         <div className="form-grid">
-          <div className="form-group"><label>Course Title</label><input className="input-field" placeholder="e.g. Object Oriented Programming" value={course} onChange={e=>setCourse(e.target.value)} /></div>
-          <div className="form-group"><label>Date of Lecture</label><input className="input-field" type="date" value={date} onChange={e=>setDate(e.target.value)} /></div>
+          <div className="form-group"><label>Student ID</label><input className="input-field" type="number" placeholder="e.g. 1" value={form.studentid} onChange={s("studentid")} /></div>
+          <div className="form-group"><label>Course ID</label><input className="input-field" type="number" placeholder="e.g. 1" value={form.courseid} onChange={s("courseid")} /></div>
         </div>
         <div className="form-grid">
+          <div className="form-group"><label>Date</label><input className="input-field" type="date" value={form.date} onChange={s("date")} /></div>
           <div className="form-group">
-            <label>Select Student</label>
-            <select className="input-field" value={selStudent} onChange={e=>setSelStudent(e.target.value)}>
-              <option value="">Choose...</option>
-              {students.map(s=><option key={s.id} value={s.id}>{s.name} ({s.rollno||"—"})</option>)}
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Attendance Status</label>
-            <select className="input-field" value={status} onChange={e=>setStatus(e.target.value)}>
+            <label>Status</label>
+            <select className="input-field" value={form.status} onChange={s("status")}>
               <option>Present</option><option>Absent</option><option>Leave</option>
             </select>
           </div>
         </div>
         <button className="btn-primary" onClick={markAtt}>Submit Record</button>
       </div>
-      
-      {myMarked.length>0 && (
-        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-          <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-light)" }}>
-            <div className="card-title" style={{ margin: 0 }}><Icons.ClipboardList /> Recent Submissions</div>
-          </div>
-          <div className="table-wrapper" style={{ border: "none", borderRadius: 0 }}>
-            <table>
-              <thead><tr><th>Student</th><th>Course</th><th>Date</th><th>Status</th></tr></thead>
-              <tbody>
-                {[...myMarked].reverse().slice(0,15).map(r=>{
-                  const stu=students.find(u=>u.id===r.studentId);
-                  return (
-                    <tr key={r.id}>
-                      <td style={{fontWeight:500}}>{stu?.name||"—"}</td>
-                      <td>{r.course}</td>
-                      <td>{r.date}</td>
-                      <td>
-                        <span className={`badge ${r.status==="Present"?"badge-success":r.status==="Absent"?"badge-danger":"badge-warning"}`}>
-                          {r.status}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
 /* ── MARKS ────────────────────────────────────────────────────── */
 function Marks({ user }) {
-  const isTeacher = user.role==="teacher"||user.role==="admin";
-  const students = DB.getUsers().filter(u=>u.role==="student");
-  const [allMarks, setAllMarks] = useState(()=>DB.getData("marks_all"));
-  const [form, setForm] = useState({studentId:"",course:"",quiz:"",assignment:"",mid:"",final:""});
-  const [ok, setOk] = useState("");
-  const s = k=>e=>setForm(f=>({...f,[k]:e.target.value}));
+  const isTeacher = user.role==="teacher";
+  const [courseId, setCourseId] = useState("");
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState(""); const [ok, setOk] = useState("");
+  const [form, setForm] = useState({ studentid:"", courseid:"", assignmentmarks:"", exammarks:"", totalmarks:"" });
+  const s = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
 
-  const save = () => {
-    if (!form.studentId||!form.course.trim()) return;
-    const entry = { id:Date.now().toString(), teacherId:user.id, teacherName:user.name, studentId:form.studentId, course:form.course.trim(), quiz:form.quiz, assignment:form.assignment, mid:form.mid, final:form.final };
-    const updated = [...allMarks, entry];
-    DB.setData("marks_all", updated); setAllMarks(updated);
-    setForm({studentId:"",course:"",quiz:"",assignment:"",mid:"",final:""});
-    setOk("Academic scores published successfully."); setTimeout(()=>setOk(""),3000);
+  const loadMarks = async () => {
+    if (!courseId) return setErr("Enter a course ID first.");
+    setLoading(true); setErr("");
+    try {
+      const res = await api.viewMarks(user.studentid, courseId);
+      setRecords(res.data || []);
+    } catch (e) { setErr(e.message); setRecords([]); }
+    finally { setLoading(false); }
+  };
+
+  const save = async () => {
+    if (!form.studentid || !form.courseid) return setErr("Student ID and Course ID required.");
+    setErr("");
+    try {
+      await api.updateMarks({
+        teacherid: user.teacherid,
+        studentid: Number(form.studentid),
+        courseid: Number(form.courseid),
+        assignmentmarks: Number(form.assignmentmarks) || 0,
+        exammarks: Number(form.exammarks) || 0,
+        totalmarks: Number(form.totalmarks) || 0,
+      });
+      setForm({ studentid:"", courseid:"", assignmentmarks:"", exammarks:"", totalmarks:"" });
+      setOk("Marks updated successfully."); setTimeout(()=>setOk(""),3000);
+    } catch (e) { setErr(e.message); }
   };
 
   if (!isTeacher) {
-    const mine = allMarks.filter(r=>r.studentId===user.id);
     return (
       <div className="fade-in">
         <div className="page-header">
@@ -397,24 +479,34 @@ function Marks({ user }) {
             <p className="page-subtitle">Review assessment scores distributed by faculty</p>
           </div>
         </div>
-        {mine.length===0 ? 
+        <div className="card" style={{ maxWidth: 640 }}>
+          {err && <div className="alert alert-error"><Icons.CheckCircle />{err}</div>}
+          <div className="form-grid">
+            <div className="form-group">
+              <label>Course ID</label>
+              <input className="input-field" type="number" placeholder="e.g. 1" value={courseId} onChange={e=>setCourseId(e.target.value)} />
+            </div>
+            <div className="form-group" style={{ display:"flex", alignItems:"flex-end" }}>
+              <button className="btn-primary" onClick={loadMarks} disabled={loading}>{loading ? "Loading..." : "View Marks"}</button>
+            </div>
+          </div>
+        </div>
+        {records.length===0 ? 
           <div className="card empty-state">
             <div style={{fontSize: 48, opacity: 0.2, marginBottom: 16}}><Icons.Chart /></div>
-            <div className="empty-text">No assessment data available.</div>
+            <div className="empty-text">No marks data available.</div>
           </div>
         : <div className="card" style={{ padding: 0, overflow: "hidden" }}>
             <div className="table-wrapper">
               <table>
-                <thead><tr><th>Course</th><th>Quiz</th><th>Assignment</th><th>Midterm</th><th>Final</th><th>Instructor</th></tr></thead>
+                <thead><tr><th>Course ID</th><th>Assignment</th><th>Exam</th><th>Total</th></tr></thead>
                 <tbody>
-                  {mine.map(r=>(
-                    <tr key={r.id}>
-                      <td style={{fontWeight:600, color:"var(--primary)"}}>{r.course}</td>
-                      <td>{r.quiz||"—"}</td>
-                      <td>{r.assignment||"—"}</td>
-                      <td>{r.mid||"—"}</td>
-                      <td>{r.final||"—"}</td>
-                      <td>{r.teacherName}</td>
+                  {records.map((r,i)=>(
+                    <tr key={i}>
+                      <td style={{fontWeight:600, color:"var(--primary)"}}>{r.courseid}</td>
+                      <td>{r.assignmentmarks ?? "—"}</td>
+                      <td>{r.exammarks ?? "—"}</td>
+                      <td style={{fontWeight:700}}>{r.totalmarks ?? "—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -435,48 +527,52 @@ function Marks({ user }) {
         </div>
       </div>
       <div className="card" style={{ maxWidth: 640 }}>
-        {ok&&<div className="alert alert-success"><Icons.CheckCircle />{ok}</div>}
-        
+        {ok && <div className="alert alert-success"><Icons.CheckCircle />{ok}</div>}
+        {err && <div className="alert alert-error"><Icons.CheckCircle />{err}</div>}
         <div className="form-grid">
-          <div className="form-group">
-            <label>Student Registration</label>
-            <select className="input-field" value={form.studentId} onChange={s("studentId")}>
-              <option value="">Select an individual...</option>
-              {students.map(st=><option key={st.id} value={st.id}>{st.name} ({st.rollno||"—"})</option>)}
-            </select>
-          </div>
-          <div className="form-group"><label>Course Title</label><input className="input-field" placeholder="e.g. Data Structures" value={form.course} onChange={s("course")} /></div>
-        </div>
-        
-        <div className="form-grid">
-          <div className="form-group"><label>Quiz Total</label><input className="input-field" type="number" placeholder="Out of 10/20" value={form.quiz} onChange={s("quiz")} /></div>
-          <div className="form-group"><label>Assignment Total</label><input className="input-field" type="number" placeholder="Out of 10/20" value={form.assignment} onChange={s("assignment")} /></div>
+          <div className="form-group"><label>Student ID</label><input className="input-field" type="number" placeholder="e.g. 1" value={form.studentid} onChange={s("studentid")} /></div>
+          <div className="form-group"><label>Course ID</label><input className="input-field" type="number" placeholder="e.g. 1" value={form.courseid} onChange={s("courseid")} /></div>
         </div>
         <div className="form-grid">
-          <div className="form-group"><label>Midterm Examination</label><input className="input-field" type="number" placeholder="Out of 30/40" value={form.mid} onChange={s("mid")} /></div>
-          <div className="form-group"><label>Final Examination</label><input className="input-field" type="number" placeholder="Out of 40/50" value={form.final} onChange={s("final")} /></div>
+          <div className="form-group"><label>Assignment Marks</label><input className="input-field" type="number" value={form.assignmentmarks} onChange={s("assignmentmarks")} /></div>
+          <div className="form-group"><label>Exam Marks</label><input className="input-field" type="number" value={form.exammarks} onChange={s("exammarks")} /></div>
+        </div>
+        <div className="form-grid">
+          <div className="form-group"><label>Total Marks</label><input className="input-field" type="number" value={form.totalmarks} onChange={s("totalmarks")} /></div>
         </div>
         <button className="btn-primary" onClick={save}>Publish Data</button>
       </div>
     </div>
   );
 }
-
 /* ── COMPLAINTS ───────────────────────────────────────────────── */
 function Complaints({ user }) {
   const isAdmin = user.role==="admin";
-  const [all, setAll] = useState(()=>DB.getData("complaints"));
-  const [form, setForm] = useState({category:"Academic",desc:""});
-  const [ok, setOk] = useState("");
+  const [all, setAll] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [desc, setDesc] = useState("");
+  const [ok, setOk] = useState(""); const [err, setErr] = useState("");
 
-  const submit = () => {
-    if (!form.desc.trim()) return;
-    const c = { id:Date.now().toString(), studentId:user.id, studentName:user.name, category:form.category, desc:form.desc.trim(), date:new Date().toISOString().slice(0,10), status:"Pending" };
-    const updated = [...all, c]; DB.setData("complaints", updated); setAll(updated);
-    setForm({category:"Academic",desc:""}); setOk("Formal complaint submitted to the administration."); setTimeout(()=>setOk(""),4000);
+  const load = async () => {
+    setLoading(true); setErr("");
+    try {
+      const res = isAdmin ? await api.getAllComplaints() : await api.getMyComplaints(user.studentid);
+      setAll(res.data || []);
+    } catch (e) { setErr(e.message); }
+    finally { setLoading(false); }
   };
 
-  const resolve = id => { const u=all.map(c=>c.id===id?{...c,status:"Resolved"}:c); DB.setData("complaints",u); setAll(u); };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  const submit = async () => {
+    if (!desc.trim()) return setErr("Description required.");
+    setErr("");
+    try {
+      await api.submitComplaint({ studentid: user.studentid, description: desc.trim() });
+      setDesc(""); setOk("Complaint submitted."); setTimeout(()=>setOk(""),4000);
+      load();
+    } catch (e) { setErr(e.message); }
+  };
 
   if (isAdmin) return (
     <div className="fade-in">
@@ -486,30 +582,24 @@ function Complaints({ user }) {
           <p className="page-subtitle">Review and manage institutional issues reported by students</p>
         </div>
       </div>
-      {all.length===0 ? 
+      {err && <div className="alert alert-error"><Icons.CheckCircle />{err}</div>}
+      {loading ? <div className="card empty-state"><div className="empty-text">Loading...</div></div>
+      : all.length===0 ? 
         <div className="card empty-state">
           <div style={{fontSize: 48, opacity: 0.2, marginBottom: 16}}><Icons.ClipboardList /></div>
-          <div className="empty-text">No pending complaints. The institution is operating smoothly.</div>
+          <div className="empty-text">No pending complaints.</div>
         </div>
       : <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <div className="table-wrapper">
             <table>
-              <thead><tr><th>Complainant</th><th>Classification</th><th>Details</th><th>Filing Date</th><th>Status</th><th>Action</th></tr></thead>
+              <thead><tr><th>ID</th><th>Student ID</th><th>Description</th><th>Date</th></tr></thead>
               <tbody>
                 {all.map(c=>(
-                  <tr key={c.id}>
-                    <td style={{fontWeight:500}}>{c.studentName}</td>
-                    <td>{c.category}</td>
-                    <td style={{maxWidth:300, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}} title={c.desc}>{c.desc}</td>
-                    <td>{c.date}</td>
-                    <td><span className={`badge ${c.status==="Resolved"?"badge-success":"badge-warning"}`}>{c.status}</span></td>
-                    <td>
-                      {c.status!=="Resolved" ? (
-                        <button className="btn-primary" style={{padding: "6px 12px", fontSize: 12}} onClick={()=>resolve(c.id)}>Mark Resolved</button>
-                      ) : (
-                        <span style={{color: "var(--success)", display: "flex"}}><Icons.CheckCircle /></span>
-                      )}
-                    </td>
+                  <tr key={c.complaintid}>
+                    <td style={{fontWeight:500}}>#{c.complaintid}</td>
+                    <td>{c.studentid}</td>
+                    <td style={{maxWidth:400}}>{c.description}</td>
+                    <td>{c.complaintdate ? new Date(c.complaintdate).toLocaleDateString() : "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -520,7 +610,6 @@ function Complaints({ user }) {
     </div>
   );
 
-  const mine = all.filter(c=>c.studentId===user.id);
   return (
     <div className="fade-in">
       <div className="page-header">
@@ -529,37 +618,29 @@ function Complaints({ user }) {
           <p className="page-subtitle">Submit formal concerns to university administration</p>
         </div>
       </div>
-      
       <div className="card" style={{ maxWidth: 640 }}>
-        {ok&&<div className="alert alert-success"><Icons.CheckCircle />{ok}</div>}
+        {ok && <div className="alert alert-success"><Icons.CheckCircle />{ok}</div>}
+        {err && <div className="alert alert-error"><Icons.CheckCircle />{err}</div>}
         <div className="form-group">
-          <label>Classification</label>
-          <select className="input-field" value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>
-            <option>Academic</option><option>Facility</option><option>Financial</option><option>Administrative</option><option>Other</option>
-          </select>
+          <label>Description</label>
+          <textarea className="input-field" rows={5} placeholder="Provide a detailed and objective account of the issue..." value={desc} onChange={e=>setDesc(e.target.value)} style={{resize: "vertical", minHeight: 120}} />
         </div>
-        <div className="form-group">
-          <label>Formal Description</label>
-          <textarea className="input-field" rows={5} placeholder="Provide a detailed and objective account of the issue..." value={form.desc} onChange={e=>setForm(f=>({...f,desc:e.target.value}))} style={{resize: "vertical", minHeight: 120}} />
-        </div>
-        <button className="btn-primary" onClick={submit}>Submit Document</button>
+        <button className="btn-primary" onClick={submit}>Submit Complaint</button>
       </div>
-      
-      {mine.length>0 && (
+      {all.length>0 && (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-light)" }}>
-            <div className="card-title" style={{ margin: 0 }}><Icons.Document /> Historical Submissions</div>
+            <div className="card-title" style={{ margin: 0 }}><Icons.Document /> My Submissions</div>
           </div>
           <div className="table-wrapper" style={{ border: "none", borderRadius: 0 }}>
             <table>
-              <thead><tr><th>Classification</th><th>Excerpt</th><th>Date</th><th>Status</th></tr></thead>
+              <thead><tr><th>ID</th><th>Description</th><th>Date</th></tr></thead>
               <tbody>
-                {mine.map(c=>(
-                  <tr key={c.id}>
-                    <td style={{fontWeight:500}}>{c.category}</td>
-                    <td style={{maxWidth:300, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{c.desc}</td>
-                    <td>{c.date}</td>
-                    <td><span className={`badge ${c.status==="Resolved"?"badge-success":"badge-warning"}`}>{c.status}</span></td>
+                {all.map(c=>(
+                  <tr key={c.complaintid}>
+                    <td style={{fontWeight:500}}>#{c.complaintid}</td>
+                    <td style={{maxWidth:400}}>{c.description}</td>
+                    <td>{c.complaintdate ? new Date(c.complaintdate).toLocaleDateString() : "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -574,15 +655,28 @@ function Complaints({ user }) {
 /* ── ANNOUNCEMENTS ────────────────────────────────────────────── */
 function Announcements({ user }) {
   const canPost = user.role==="admin"||user.role==="teacher";
-  const [all, setAll] = useState(()=>DB.getData("announcements"));
-  const [form, setForm] = useState({title:"",content:"",audience:"All"});
-  const [ok, setOk] = useState("");
+  const [all, setAll] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({title:"",content:""});
+  const [ok, setOk] = useState(""); const [err, setErr] = useState("");
 
-  const post = () => {
-    if (!form.title.trim()||!form.content.trim()) return;
-    const a = { id:Date.now().toString(), title:form.title.trim(), content:form.content.trim(), audience:form.audience, author:user.name, date:new Date().toISOString().slice(0,10) };
-    const updated = [a,...all]; DB.setData("announcements",updated); setAll(updated);
-    setForm({title:"",content:"",audience:"All"}); setOk("Official announcement broadcasted."); setTimeout(()=>setOk(""),3000);
+  const load = async () => {
+    setLoading(true); setErr("");
+    try { const res = await api.getAnnouncements(); setAll(res.data || []); }
+    catch (e) { setErr(e.message); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const post = async () => {
+    if (!form.title.trim() || !form.content.trim()) return setErr("Title and content required.");
+    setErr("");
+    try {
+      await api.addAnnouncement({ postedbyid: user.userid, title: form.title.trim(), text1: form.content.trim() });
+      setForm({title:"",content:""}); setOk("Announcement posted."); setTimeout(()=>setOk(""),3000);
+      load();
+    } catch (e) { setErr(e.message); }
   };
 
   return (
@@ -597,43 +691,38 @@ function Announcements({ user }) {
       {canPost && (
         <div className="card" style={{ maxWidth: 700 }}>
           <div className="card-title"><Icons.Speakerphone /> Broadcast Circular</div>
-          {ok&&<div className="alert alert-success"><Icons.CheckCircle />{ok}</div>}
+          {ok && <div className="alert alert-success"><Icons.CheckCircle />{ok}</div>}
+          {err && <div className="alert alert-error"><Icons.CheckCircle />{err}</div>}
           <div className="form-group">
-            <label>Header / Subject</label>
-            <input className="input-field" placeholder="Directive subject line" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} />
+            <label>Title</label>
+            <input className="input-field" placeholder="Subject line" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} />
           </div>
           <div className="form-group">
-            <label>Memorandum Body</label>
+            <label>Content</label>
             <textarea className="input-field" rows={5} placeholder="Draft the communication..." value={form.content} onChange={e=>setForm(f=>({...f,content:e.target.value}))} style={{resize: "vertical", minHeight: 120}} />
           </div>
-          <div className="form-group">
-            <label>Designated Recipients</label>
-            <select className="input-field" value={form.audience} onChange={e=>setForm(f=>({...f,audience:e.target.value}))} style={{maxWidth: 240}}>
-              <option>All</option><option>Students</option><option>Teachers</option>
-            </select>
-          </div>
-          <button className="btn-primary" onClick={post}>Authorize Broadcast</button>
+          <button className="btn-primary" onClick={post}>Post Announcement</button>
         </div>
       )}
       
-      {all.length===0 ? 
+      {loading ? <div className="card empty-state"><div className="empty-text">Loading...</div></div>
+      : all.length===0 ? 
         <div className="card empty-state">
           <div style={{fontSize: 48, opacity: 0.2, marginBottom: 16}}><Icons.Speakerphone /></div>
           <div className="empty-text">No active university announcements.</div>
         </div>
       : <div style={{ display: "grid", gap: 20 }}>
           {all.map(a=>(
-            <div className="card" key={a.id} style={{ marginBottom: 0, paddingLeft: 30, borderLeft: "4px solid var(--primary)" }}>
+            <div className="card" key={a.announcementid} style={{ marginBottom: 0, paddingLeft: 30, borderLeft: "4px solid var(--primary)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
                 <h3 style={{ fontSize: 20, margin: 0, color: "var(--text-main)", fontWeight: 700 }}>{a.title}</h3>
-                <span className="badge badge-neutral"><Icons.User /> {a.audience}</span>
               </div>
               <p style={{ fontSize: 15, color: "var(--text-muted)", lineHeight: 1.7, marginBottom: 20, whiteSpace: "pre-wrap" }}>
-                {a.content}
+                {a.text1}
               </p>
               <div style={{ fontSize: 13, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 16, borderTop: "1px solid var(--border-light)", paddingTop: 16 }}>
-                <span style={{display: "flex", alignItems: "center", gap: 6}}><Icons.User /> {a.author}</span>
-                <span style={{display: "flex", alignItems: "center", gap: 6}}><Icons.Calendar /> {a.date}</span>
+                <span style={{display: "flex", alignItems: "center", gap: 6}}><Icons.User /> Poster ID: {a.postedbyid}</span>
+                <span style={{display: "flex", alignItems: "center", gap: 6}}><Icons.Calendar /> {a.posteddate ? new Date(a.posteddate).toLocaleDateString() : "—"}</span>
               </div>
             </div>
           ))}
@@ -645,22 +734,66 @@ function Announcements({ user }) {
 
 /* ── COURT BOOKING ────────────────────────────────────────────── */
 function Court({ user }) {
-  const SLOTS = ["09:00 - 10:00","10:00 - 11:00","11:00 - 12:00","12:00 - 13:00","14:00 - 15:00","15:00 - 16:00","16:00 - 17:00","17:00 - 18:00"];
-  const [bookings, setBookings] = useState(()=>DB.getData("court_bookings"));
+  // backend uses TIME type (HH:MM:SS) - we map slot label to start/end times
+  const SLOTS = [
+    { label: "09:00 - 10:00", start: "09:00:00", end: "10:00:00" },
+    { label: "10:00 - 11:00", start: "10:00:00", end: "11:00:00" },
+    { label: "11:00 - 12:00", start: "11:00:00", end: "12:00:00" },
+    { label: "12:00 - 13:00", start: "12:00:00", end: "13:00:00" },
+    { label: "14:00 - 15:00", start: "14:00:00", end: "15:00:00" },
+    { label: "15:00 - 16:00", start: "15:00:00", end: "16:00:00" },
+    { label: "16:00 - 17:00", start: "16:00:00", end: "17:00:00" },
+    { label: "17:00 - 18:00", start: "17:00:00", end: "18:00:00" },
+  ];
+  const [bookings, setBookings] = useState([]);
   const [court, setCourt] = useState("Basketball");
   const [date, setDate] = useState(new Date().toISOString().slice(0,10));
-  const [selected, setSelected] = useState(null); const [ok, setOk] = useState("");
+  const [selected, setSelected] = useState(null);
+  const [ok, setOk] = useState(""); const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  const takenSlots = bookings.filter(b=>b.court===court&&b.date===date).map(b=>b.slot);
-
-  const book = () => {
-    if (selected===null) return;
-    const b = { id:Date.now().toString(), userId:user.id, userName:user.name, court, date, slot:SLOTS[selected] };
-    const updated = [...bookings, b]; DB.setData("court_bookings",updated); setBookings(updated);
-    setOk(`${court} reservation confirmed for ${SLOTS[selected]}.`); setSelected(null); setTimeout(()=>setOk(""),4000);
+  const loadBookings = async () => {
+    try {
+      const res = await api.viewCourtBookings(user.studentid);
+      setBookings(res.data || []);
+    } catch (e) { setErr(e.message); }
   };
 
-  const mine = bookings.filter(b=>b.userId===user.id);
+  useEffect(() => { loadBookings(); /* eslint-disable-next-line */ }, []);
+
+  // slots taken by THIS user for the selected court+date
+  // (backend will reject overlaps with other users automatically via slotAvailable check)
+  const takenSlots = bookings
+    .filter(b => b.sport === court && (b.bookingdate || "").slice(0,10) === date)
+    .map(b => (b.starttime || "").slice(0,5));
+
+  const book = async () => {
+    if (selected === null) return;
+    setBusy(true); setErr("");
+    try {
+      await api.bookCourt({
+        studentid: user.studentid,
+        sport: court,
+        bookingdate: date,
+        starttime: SLOTS[selected].start,
+        endtime: SLOTS[selected].end,
+      });
+      setOk(`${court} booked for ${SLOTS[selected].label}.`);
+      setSelected(null);
+      setTimeout(()=>setOk(""), 4000);
+      loadBookings();
+    } catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const cancel = async (bookingid) => {
+    try {
+      await api.cancelBooking(bookingid);
+      setOk("Booking cancelled."); setTimeout(()=>setOk(""), 3000);
+      loadBookings();
+    } catch (e) { setErr(e.message); }
+  };
+
   return (
     <div className="fade-in">
       <div className="page-header">
@@ -672,13 +805,14 @@ function Court({ user }) {
       </div>
       
       <div className="card" style={{ maxWidth: 700 }}>
-        {ok&&<div className="alert alert-success"><Icons.CheckCircle />{ok}</div>}
+        {ok && <div className="alert alert-success"><Icons.CheckCircle />{ok}</div>}
+        {err && <div className="alert alert-error"><Icons.CheckCircle />{err}</div>}
         
         <div className="form-grid">
           <div className="form-group">
-            <label>Infrastructure</label>
+            <label>Sport</label>
             <select className="input-field" value={court} onChange={e=>{setCourt(e.target.value);setSelected(null);}}>
-              <option>Basketball Court</option><option>Tennis Court</option><option>Badminton Facility</option><option>Athletics Track</option>
+              <option>Basketball</option><option>Tennis</option><option>Badminton</option><option>Athletics</option>
             </select>
           </div>
           <div className="form-group">
@@ -688,10 +822,10 @@ function Court({ user }) {
         </div>
         
         <div style={{ marginTop: 8 }}>
-          <label style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)" }}>Available Allocations</label>
+          <label style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)" }}>Available Slots</label>
           <div className="slots-grid">
             {SLOTS.map((sl,i)=>{
-              const taken = takenSlots.includes(sl); 
+              const taken = takenSlots.includes(sl.start.slice(0,5)); 
               const sel = selected===i;
               let slotClass = "slot-available";
               if (taken) slotClass = "slot-booked";
@@ -699,37 +833,41 @@ function Court({ user }) {
               
               return (
                 <div key={i} className={`slot-item ${slotClass}`} onClick={()=>!taken&&setSelected(i)}>
-                  {sl}<br/>
-                  <span style={{ fontSize: 11, fontWeight: 400 }}>{taken?"Unavailable":sel?"Staged":"Open"}</span>
+                  {sl.label}<br/>
+                  <span style={{ fontSize: 11, fontWeight: 400 }}>{taken?"You booked":sel?"Selected":"Open"}</span>
                 </div>
               );
             })}
           </div>
+          <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>
+            Note: If a slot is taken by another student, the server will reject the booking.
+          </p>
         </div>
         
         <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid var(--border-light)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ fontSize: 14, color: "var(--text-muted)" }}>
-            {selected !== null ? <span>Selected Time: <strong>{SLOTS[selected]}</strong></span> : "Await allocation selection"}
+            {selected !== null ? <span>Selected Time: <strong>{SLOTS[selected].label}</strong></span> : "Select a slot to continue"}
           </div>
-          <button className="btn-primary" disabled={selected===null} onClick={book}>Authorize Booking</button>
+          <button className="btn-primary" disabled={selected===null || busy} onClick={book}>{busy ? "Booking..." : "Authorize Booking"}</button>
         </div>
       </div>
       
-      {mine.length>0 && (
+      {bookings.length>0 && (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-light)" }}>
-            <div className="card-title" style={{ margin: 0 }}><Icons.Calendar /> Schedule Ledger</div>
+            <div className="card-title" style={{ margin: 0 }}><Icons.Calendar /> My Bookings</div>
           </div>
           <div className="table-wrapper" style={{ border: "none", borderRadius: 0 }}>
             <table>
-              <thead><tr><th>Infrastructure</th><th>Date</th><th>Allocation</th><th>Verification</th></tr></thead>
+              <thead><tr><th>Sport</th><th>Date</th><th>Start</th><th>End</th><th>Action</th></tr></thead>
               <tbody>
-                {mine.map(b=>(
-                  <tr key={b.id}>
-                    <td style={{fontWeight:600}}>{b.court}</td>
-                    <td>{b.date}</td>
-                    <td>{b.slot}</td>
-                    <td><span className="badge badge-success">Approved</span></td>
+                {bookings.map(b=>(
+                  <tr key={b.bookingid}>
+                    <td style={{fontWeight:600}}>{b.sport}</td>
+                    <td>{b.bookingdate ? new Date(b.bookingdate).toLocaleDateString() : "—"}</td>
+                    <td>{(b.starttime || "").slice(0,5)}</td>
+                    <td>{(b.endtime || "").slice(0,5)}</td>
+                    <td><button className="btn-secondary" style={{padding:"6px 12px",fontSize:12}} onClick={()=>cancel(b.bookingid)}>Cancel</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -744,26 +882,54 @@ function Court({ user }) {
 /* ── COURSE REGISTRATION ──────────────────────────────────────── */
 function CourseReg({ user }) {
   const isAdmin = user.role==="admin";
-  const [courses, setCourses] = useState(()=>DB.getData("courses"));
-  const [regs, setRegs] = useState(()=>DB.getData("registrations"));
-  const [form, setForm] = useState({name:"",code:"",credits:"3",teacher:"",seats:"30"});
-  const [ok, setOk] = useState("");
+  const [courses, setCourses] = useState([]);
+  const [myRegs, setMyRegs] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({ coursecode:"", coursename:"", credithours:"3", teacherid:"" });
+  const [ok, setOk] = useState(""); const [err, setErr] = useState("");
 
-  const addCourse = () => {
-    if (!form.name.trim()||!form.code.trim()) return;
-    const c = { id:Date.now().toString(), name:form.name.trim(), code:form.code.trim(), credits:Number(form.credits), teacher:form.teacher.trim(), seats:Number(form.seats) };
-    const updated = [...courses, c]; DB.setData("courses",updated); setCourses(updated);
-    setForm({name:"",code:"",credits:"3",teacher:"",seats:"30"}); setOk("Curriculum addition processed."); setTimeout(()=>setOk(""),3000);
+  const load = async () => {
+    setLoading(true); setErr("");
+    try {
+      const c = await api.getAllCourses();
+      setCourses(c.data || []);
+      if (user.role === "student" && user.studentid) {
+        const r = await api.getRegistrations(user.studentid);
+        setMyRegs(r.data || []);
+      }
+    } catch (e) { setErr(e.message); }
+    finally { setLoading(false); }
   };
 
-  const register = course => {
-    if (course.seats<=0) return;
-    const reg = { id:Date.now().toString(), studentId:user.id, courseId:course.id, date:new Date().toISOString().slice(0,10) };
-    const updatedRegs = [...regs, reg];
-    const updatedCourses = courses.map(c=>c.id===course.id?{...c,seats:c.seats-1}:c);
-    DB.setData("registrations",updatedRegs); DB.setData("courses",updatedCourses);
-    setRegs(updatedRegs); setCourses(updatedCourses);
-    setOk(`Enrollment protocol completed for ${course.code}.`); setTimeout(()=>setOk(""),4000);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  const addCourse = async () => {
+    if (!form.coursecode.trim() || !form.coursename.trim() || !form.teacherid) return setErr("Code, name, and teacher ID required.");
+    setErr("");
+    try {
+      await api.createCourse({
+        coursecode: form.coursecode.trim(),
+        coursename: form.coursename.trim(),
+        credithours: Number(form.credithours),
+        teacherid: Number(form.teacherid),
+      });
+      setForm({ coursecode:"", coursename:"", credithours:"3", teacherid:"" });
+      setOk("Course added."); setTimeout(()=>setOk(""),3000);
+      load();
+    } catch (e) { setErr(e.message); }
+  };
+
+  const register = async (course) => {
+    setErr("");
+    try {
+      await api.registerCourse({
+        studentid: user.studentid,
+        courseid: course.courseid,
+        semester: user.semester || 1,
+      });
+      setOk(`Enrolled in ${course.coursecode}.`); setTimeout(()=>setOk(""), 4000);
+      load();
+    } catch (e) { setErr(e.message); }
   };
 
   if (isAdmin) return (
@@ -774,39 +940,36 @@ function CourseReg({ user }) {
           <p className="page-subtitle">Configure academic offerings for the upcoming term</p>
         </div>
       </div>
-      
       <div className="card" style={{ maxWidth: 740 }}>
-        <div className="card-title"><Icons.Book /> Append Curriculum Database</div>
-        {ok&&<div className="alert alert-success"><Icons.CheckCircle />{ok}</div>}
-        
+        <div className="card-title"><Icons.Book /> Add a Course</div>
+        {ok && <div className="alert alert-success"><Icons.CheckCircle />{ok}</div>}
+        {err && <div className="alert alert-error"><Icons.CheckCircle />{err}</div>}
         <div className="form-grid">
-          <div className="form-group"><label>Nomenclature</label><input className="input-field" placeholder="e.g. Advanced Operating Systems" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} /></div>
-          <div className="form-group"><label>Reference Code</label><input className="input-field" placeholder="e.g. CS-401" value={form.code} onChange={e=>setForm(f=>({...f,code:e.target.value}))} /></div>
+          <div className="form-group"><label>Course Code</label><input className="input-field" placeholder="e.g. CS-401" value={form.coursecode} onChange={e=>setForm(f=>({...f,coursecode:e.target.value}))} /></div>
+          <div className="form-group"><label>Course Name</label><input className="input-field" placeholder="e.g. Operating Systems" value={form.coursename} onChange={e=>setForm(f=>({...f,coursename:e.target.value}))} /></div>
         </div>
-        <div className="form-grid" style={{ gridTemplateColumns: "2fr 1fr 1fr" }}>
-          <div className="form-group"><label>Faculty Assignment</label><input className="input-field" placeholder="e.g. Dr. Faculty Name" value={form.teacher} onChange={e=>setForm(f=>({...f,teacher:e.target.value}))} /></div>
-          <div className="form-group"><label>Credit Allocation</label><input className="input-field" type="number" value={form.credits} onChange={e=>setForm(f=>({...f,credits:e.target.value}))} /></div>
-          <div className="form-group"><label>Capacity Limitation</label><input className="input-field" type="number" value={form.seats} onChange={e=>setForm(f=>({...f,seats:e.target.value}))} /></div>
+        <div className="form-grid">
+          <div className="form-group"><label>Teacher ID</label><input className="input-field" type="number" placeholder="e.g. 1" value={form.teacherid} onChange={e=>setForm(f=>({...f,teacherid:e.target.value}))} /></div>
+          <div className="form-group"><label>Credit Hours</label><input className="input-field" type="number" value={form.credithours} onChange={e=>setForm(f=>({...f,credithours:e.target.value}))} /></div>
         </div>
-        <button className="btn-primary" onClick={addCourse}>Commit to Registry</button>
+        <button className="btn-primary" onClick={addCourse}>Add Course</button>
       </div>
-      
       {courses.length>0 && (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-light)" }}>
-            <div className="card-title" style={{ margin: 0 }}>Active Offerings</div>
+            <div className="card-title" style={{ margin: 0 }}>Active Courses</div>
           </div>
           <div className="table-wrapper" style={{ border: "none", borderRadius: 0 }}>
             <table>
-              <thead><tr><th>Code</th><th>Nomenclature</th><th>Assigned Faculty</th><th>Credits</th><th>Remaining Quota</th></tr></thead>
+              <thead><tr><th>ID</th><th>Code</th><th>Name</th><th>Credits</th><th>Teacher ID</th></tr></thead>
               <tbody>
                 {courses.map(c=>(
-                  <tr key={c.id}>
-                    <td style={{fontWeight:600}}>{c.code}</td>
-                    <td>{c.name}</td>
-                    <td>{c.teacher||"—"}</td>
-                    <td>{c.credits}</td>
-                    <td><span className={`badge ${c.seats>0?"badge-success":"badge-danger"}`}>{c.seats}</span></td>
+                  <tr key={c.courseid}>
+                    <td>#{c.courseid}</td>
+                    <td style={{fontWeight:600}}>{c.coursecode}</td>
+                    <td>{c.coursename}</td>
+                    <td>{c.credithours}</td>
+                    <td>{c.teacherid}</td>
                   </tr>
                 ))}
               </tbody>
@@ -817,49 +980,42 @@ function CourseReg({ user }) {
     </div>
   );
 
-  const regIds = regs.filter(r=>r.studentId===user.id).map(r=>r.courseId);
-  const myRegs = regs.filter(r=>r.studentId===user.id);
-  
+  const regCourseIds = myRegs.map(r => r.courseid);
+
   return (
     <div className="fade-in">
       <div className="page-header">
         <div className="header-content" style={{ borderRadius: "var(--radius-lg)" }}>
           <h1 className="page-title">Course Registration Portal</h1>
-          <p className="page-subtitle">Formally enroll in authorized academic electives and cores</p>
+          <p className="page-subtitle">Enroll in available courses for the current term</p>
         </div>
       </div>
-      
-      {ok&&<div className="alert alert-success" style={{maxWidth: 1200}}><Icons.CheckCircle />{ok}</div>}
-      
-      {courses.length===0 ? 
+      {ok && <div className="alert alert-success" style={{maxWidth: 1200}}><Icons.CheckCircle />{ok}</div>}
+      {err && <div className="alert alert-error" style={{maxWidth: 1200}}><Icons.CheckCircle />{err}</div>}
+      {loading ? <div className="card empty-state"><div className="empty-text">Loading courses...</div></div>
+      : courses.length===0 ? 
         <div className="card empty-state">
           <div style={{fontSize: 48, opacity: 0.2, marginBottom: 16}}><Icons.Book /></div>
-          <div className="empty-text">The registration window is currently suspended.</div>
+          <div className="empty-text">No courses available.</div>
         </div>
       : <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-light)" }}>
-            <div className="card-title" style={{ margin: 0 }}>Term Schedule</div>
+            <div className="card-title" style={{ margin: 0 }}>Available Courses</div>
           </div>
           <div className="table-wrapper" style={{ border: "none", borderRadius: 0 }}>
             <table>
-              <thead><tr><th>Reference</th><th>Title</th><th>Faculty</th><th>Cr.</th><th>Quota</th><th>Action</th></tr></thead>
+              <thead><tr><th>Code</th><th>Name</th><th>Credits</th><th>Action</th></tr></thead>
               <tbody>
                 {courses.map(c=>(
-                  <tr key={c.id}>
-                    <td style={{fontWeight:600}}>{c.code}</td>
-                    <td>{c.name}</td>
-                    <td>{c.teacher||"—"}</td>
-                    <td>{c.credits}</td>
+                  <tr key={c.courseid}>
+                    <td style={{fontWeight:600}}>{c.coursecode}</td>
+                    <td>{c.coursename}</td>
+                    <td>{c.credithours}</td>
                     <td>
-                      <span className={`badge ${c.seats>0?"badge-success":"badge-danger"}`}>
-                        {c.seats>0?c.seats+" Available":"Capacity Reached"}
-                      </span>
-                    </td>
-                    <td>
-                      {regIds.includes(c.id) ? (
-                        <span className="badge badge-info" style={{padding: "6px 12px"}}><Icons.CheckCircle /> Processed</span>
+                      {regCourseIds.includes(c.courseid) ? (
+                        <span className="badge badge-info" style={{padding: "6px 12px"}}><Icons.CheckCircle /> Registered</span>
                       ) : (
-                        <button className="btn-primary" style={{padding: "6px 16px", fontSize: 12}} disabled={c.seats<=0} onClick={()=>register(c)}>Enroll</button>
+                        <button className="btn-primary" style={{padding: "6px 16px", fontSize: 12}} onClick={()=>register(c)}>Enroll</button>
                       )}
                     </td>
                   </tr>
@@ -869,26 +1025,22 @@ function CourseReg({ user }) {
           </div>
         </div>
       }
-      
       {myRegs.length>0 && (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-light)" }}>
-            <div className="card-title" style={{ margin: 0 }}><Icons.Document /> Registration Dossier</div>
+            <div className="card-title" style={{ margin: 0 }}><Icons.Document /> My Registrations</div>
           </div>
           <div className="table-wrapper" style={{ border: "none", borderRadius: 0 }}>
             <table>
-              <thead><tr><th>Course Nomenclature</th><th>Reference</th><th>Timestamp</th></tr></thead>
+              <thead><tr><th>Course ID</th><th>Semester</th><th>Date</th></tr></thead>
               <tbody>
-                {myRegs.map(r=>{
-                  const c=courses.find(x=>x.id===r.courseId); 
-                  return c ? (
-                    <tr key={r.id}>
-                      <td style={{fontWeight:500, color:"var(--primary)"}}>{c.name}</td>
-                      <td>{c.code}</td>
-                      <td>{r.date}</td>
-                    </tr>
-                  ) : null;
-                })}
+                {myRegs.map(r=>(
+                  <tr key={r.registrationid}>
+                    <td style={{fontWeight:500, color:"var(--primary)"}}>{r.courseid}</td>
+                    <td>{r.semester}</td>
+                    <td>{r.registrationdate ? new Date(r.registrationdate).toLocaleDateString() : "—"}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -901,19 +1053,59 @@ function CourseReg({ user }) {
 /* ── FEE CHALLAN ──────────────────────────────────────────────── */
 function Fee({ user }) {
   const isAdmin = user.role==="admin";
-  const students = DB.getUsers().filter(u=>u.role==="student");
-  const [challans, setChallans] = useState(()=>DB.getData("challans"));
-  const [form, setForm] = useState({studentId:"",amount:"",dueDate:"",semester:""});
-  const [ok, setOk] = useState("");
+  const [challans, setChallans] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({ studentid:"", duedate:"" });
+  const [adminLookupId, setAdminLookupId] = useState("");
+  const [ok, setOk] = useState(""); const [err, setErr] = useState("");
 
-  const generate = () => {
-    if (!form.studentId||!form.amount||!form.dueDate) return;
-    const c = { id:Date.now().toString(), studentId:form.studentId, amount:form.amount, dueDate:form.dueDate, semester:form.semester, status:"Pending", generatedDate:new Date().toISOString().slice(0,10) };
-    const updated = [...challans, c]; DB.setData("challans",updated); setChallans(updated);
-    setForm({studentId:"",amount:"",dueDate:"",semester:""}); setOk("Financial document formally generated."); setTimeout(()=>setOk(""),4000);
+  const loadStudentChallans = async () => {
+    if (!user.studentid) return;
+    setLoading(true); setErr("");
+    try {
+      const res = await api.viewFee(user.studentid);
+      setChallans(res.data || []);
+    } catch (e) { setErr(e.message); }
+    finally { setLoading(false); }
   };
 
-  const pay = id => { const u=challans.map(c=>c.id===id?{...c,status:"Paid",paidDate:new Date().toISOString().slice(0,10)}:c); DB.setData("challans",u); setChallans(u); };
+  const adminLookup = async () => {
+    if (!adminLookupId) return setErr("Enter a student ID.");
+    setLoading(true); setErr("");
+    try {
+      const res = await api.viewFee(Number(adminLookupId));
+      setChallans(res.data || []);
+    } catch (e) { setErr(e.message); setChallans([]); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => {
+    if (!isAdmin) loadStudentChallans();
+    /* eslint-disable-next-line */
+  }, []);
+
+  const generate = async () => {
+    if (!form.studentid || !form.duedate) return setErr("Student ID and due date required.");
+    setErr("");
+    try {
+      await api.generateFee({
+        adminid: user.userid,
+        studentid: Number(form.studentid),
+        duedate: form.duedate,
+      });
+      setForm({ studentid:"", duedate:"" });
+      setOk("Challan generated."); setTimeout(()=>setOk(""),4000);
+    } catch (e) { setErr(e.message); }
+  };
+
+  const pay = async (challanid) => {
+    setErr("");
+    try {
+      await api.payFee({ studentid: user.studentid, challanid });
+      setOk("Payment processed."); setTimeout(()=>setOk(""),3000);
+      loadStudentChallans();
+    } catch (e) { setErr(e.message); }
+  };
 
   if (isAdmin) return (
     <div className="fade-in">
@@ -923,53 +1115,49 @@ function Fee({ user }) {
           <p className="page-subtitle">Issue and monitor structural fee assessments</p>
         </div>
       </div>
-      
       <div className="card" style={{ maxWidth: 660 }}>
-        <div className="card-title"><Icons.CreditCard /> Execute Invoice</div>
-        {ok&&<div className="alert alert-success"><Icons.CheckCircle />{ok}</div>}
-        
-        <div className="form-group">
-          <label>Target Account</label>
-          <select className="input-field" value={form.studentId} onChange={e=>setForm(f=>({...f,studentId:e.target.value}))}>
-            <option value="">Select registry entry...</option>
-            {students.map(s=><option key={s.id} value={s.id}>{s.name} ({s.rollno||"—"})</option>)}
-          </select>
-        </div>
-        
+        <div className="card-title"><Icons.CreditCard /> Generate Challan</div>
+        {ok && <div className="alert alert-success"><Icons.CheckCircle />{ok}</div>}
+        {err && <div className="alert alert-error"><Icons.CheckCircle />{err}</div>}
         <div className="form-grid">
-          <div className="form-group"><label>Principal (PKR)</label><input className="input-field" type="number" placeholder="e.g. 150000" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))} /></div>
-          <div className="form-group"><label>Maturity Date</label><input className="input-field" type="date" value={form.dueDate} onChange={e=>setForm(f=>({...f,dueDate:e.target.value}))} /></div>
+          <div className="form-group"><label>Student ID</label><input className="input-field" type="number" placeholder="e.g. 1" value={form.studentid} onChange={e=>setForm(f=>({...f,studentid:e.target.value}))} /></div>
+          <div className="form-group"><label>Due Date</label><input className="input-field" type="date" value={form.duedate} onChange={e=>setForm(f=>({...f,duedate:e.target.value}))} /></div>
         </div>
-        
-        <div className="form-group" style={{ maxWidth: "50%" }}>
-          <label>Academic Period</label>
-          <input className="input-field" placeholder="e.g. Spring 2025" value={form.semester} onChange={e=>setForm(f=>({...f,semester:e.target.value}))} />
-        </div>
-        
-        <button className="btn-primary" onClick={generate} style={{ marginTop: 8 }}>Process Invoice</button>
+        <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
+          Amount is calculated automatically from registered courses.
+        </p>
+        <button className="btn-primary" onClick={generate}>Generate Challan</button>
       </div>
-      
+      <div className="card" style={{ maxWidth: 660 }}>
+        <div className="card-title">Lookup Student Challans</div>
+        <div className="form-grid">
+          <div className="form-group">
+            <label>Student ID</label>
+            <input className="input-field" type="number" value={adminLookupId} onChange={e=>setAdminLookupId(e.target.value)} />
+          </div>
+          <div className="form-group" style={{ display:"flex", alignItems:"flex-end" }}>
+            <button className="btn-primary" onClick={adminLookup} disabled={loading}>{loading ? "Loading..." : "View"}</button>
+          </div>
+        </div>
+      </div>
       {challans.length>0 && (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border-light)" }}>
-            <div className="card-title" style={{ margin: 0 }}>Issued Document Registry</div>
+            <div className="card-title" style={{ margin: 0 }}>Challans</div>
           </div>
           <div className="table-wrapper" style={{ border: "none", borderRadius: 0 }}>
             <table>
-              <thead><tr><th>Entity</th><th>Liability</th><th>Deadline</th><th>Period</th><th>Clearance</th></tr></thead>
+              <thead><tr><th>ID</th><th>Total</th><th>Remaining</th><th>Due Date</th><th>Status</th></tr></thead>
               <tbody>
-                {challans.map(c=>{
-                  const s=students.find(x=>x.id===c.studentId); 
-                  return (
-                    <tr key={c.id}>
-                      <td style={{fontWeight:500}}>{s?.name||"—"}</td>
-                      <td style={{fontWeight:600, color:"var(--primary)"}}>PKR {Number(c.amount).toLocaleString()}</td>
-                      <td>{c.dueDate}</td>
-                      <td>{c.semester||"—"}</td>
-                      <td><span className={`badge ${c.status==="Paid"?"badge-success":"badge-warning"}`}>{c.status}</span></td>
-                    </tr>
-                  ); 
-                })}
+                {challans.map(c=>(
+                  <tr key={c.challanid}>
+                    <td>#{c.challanid}</td>
+                    <td style={{fontWeight:600, color:"var(--primary)"}}>PKR {Number(c.totalamount||0).toLocaleString()}</td>
+                    <td>PKR {Number(c.remainingamount||0).toLocaleString()}</td>
+                    <td>{c.duedate ? new Date(c.duedate).toLocaleDateString() : "—"}</td>
+                    <td><span className={`badge ${(c.status||"").toLowerCase()==="paid"?"badge-success":"badge-warning"}`}>{c.status||"Pending"}</span></td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -978,7 +1166,6 @@ function Fee({ user }) {
     </div>
   );
 
-  const mine = challans.filter(c=>c.studentId===user.id);
   return (
     <div className="fade-in">
       <div className="page-header">
@@ -987,47 +1174,49 @@ function Fee({ user }) {
           <p className="page-subtitle">Consult and reconcile outstanding institutional dues</p>
         </div>
       </div>
-      
-      {mine.length===0 ? 
+      {ok && <div className="alert alert-success" style={{maxWidth: 1200}}><Icons.CheckCircle />{ok}</div>}
+      {err && <div className="alert alert-error" style={{maxWidth: 1200}}><Icons.CheckCircle />{err}</div>}
+      {loading ? <div className="card empty-state"><div className="empty-text">Loading...</div></div>
+      : challans.length===0 ? 
         <div className="card empty-state">
           <div style={{fontSize: 48, opacity: 0.2, marginBottom: 16}}><Icons.CreditCard /></div>
           <div className="empty-text">No financial obligations currently exist.</div>
         </div>
       : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: 24 }}>
-          {mine.map(c=>(
-            <div className="card" key={c.id} style={{ display: "flex", flexDirection: "column", marginBottom: 0 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                <span className={`badge ${c.status==="Paid"?"badge-success":"badge-warning"}`}>{c.status}</span>
-                <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}>Generated: {c.generatedDate}</span>
-              </div>
-              
-              <div style={{ background: "var(--bg-app)", padding: 24, borderRadius: "var(--radius-md)", marginBottom: 24, border: "1px solid var(--border-light)" }}>
-                <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700 }}>Total Liability</div>
-                <div style={{ fontSize: 36, fontWeight: 800, color: "var(--primary)", lineHeight: 1 }}>PKR {Number(c.amount).toLocaleString()}</div>
-              </div>
-              
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24, flex: 1 }}>
-                <div>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>Maturity Date</div>
-                  <div style={{ fontWeight: 600, color: "var(--text-main)", fontSize: 15 }}>{c.dueDate}</div>
+          {challans.map(c=>{
+            const isPaid = (c.status||"").toLowerCase()==="paid";
+            return (
+              <div className="card" key={c.challanid} style={{ display: "flex", flexDirection: "column", marginBottom: 0 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                  <span className={`badge ${isPaid?"badge-success":"badge-warning"}`}>{c.status||"Pending"}</span>
+                  <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}>Challan #{c.challanid}</span>
                 </div>
-                <div>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>Academic Period</div>
-                  <div style={{ fontWeight: 600, color: "var(--text-main)", fontSize: 15 }}>{c.semester||"—"}</div>
+                <div style={{ background: "var(--bg-app)", padding: 24, borderRadius: "var(--radius-md)", marginBottom: 24, border: "1px solid var(--border-light)" }}>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700 }}>Total Liability</div>
+                  <div style={{ fontSize: 36, fontWeight: 800, color: "var(--primary)", lineHeight: 1 }}>PKR {Number(c.totalamount||0).toLocaleString()}</div>
                 </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24, flex: 1 }}>
+                  <div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>Due Date</div>
+                    <div style={{ fontWeight: 600, color: "var(--text-main)", fontSize: 15 }}>{c.duedate ? new Date(c.duedate).toLocaleDateString() : "—"}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>Remaining</div>
+                    <div style={{ fontWeight: 600, color: "var(--text-main)", fontSize: 15 }}>PKR {Number(c.remainingamount||0).toLocaleString()}</div>
+                  </div>
+                </div>
+                {!isPaid ? (
+                  <button className="btn-primary" style={{ width: "100%", padding: 14 }} onClick={()=>pay(c.challanid)}>
+                    Process Payment
+                  </button>
+                ) : (
+                  <div style={{ padding: "14px", background: "var(--bg-app)", color: "var(--success)", border: "1px solid var(--success-bg)", borderRadius: "var(--radius-sm)", textAlign: "center", fontWeight: 600, fontSize: 14, display: "flex", justifyContent: "center", alignItems: "center", gap: 8 }}>
+                    <Icons.CheckCircle /> Paid
+                  </div>
+                )}
               </div>
-              
-              {c.status==="Pending" ? (
-                <button className="btn-primary" style={{ width: "100%", padding: 14 }} onClick={()=>pay(c.id)}>
-                  Process Remittance
-                </button>
-              ) : (
-                <div style={{ padding: "14px", background: "var(--bg-app)", color: "var(--success)", border: "1px solid var(--success-bg)", borderRadius: "var(--radius-sm)", textAlign: "center", fontWeight: 600, fontSize: 14, display: "flex", justifyContent: "center", alignItems: "center", gap: 8 }}>
-                  <Icons.CheckCircle /> Transaction Verified: {c.paidDate}
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       }
     </div>
@@ -1036,20 +1225,41 @@ function Fee({ user }) {
 
 /* ── TRANSCRIPT ───────────────────────────────────────────────── */
 function Transcript({ user }) {
-  const isAdmin = user.role==="admin"||user.role==="teacher";
-  const students = DB.getUsers().filter(u=>u.role==="student");
-  const [transcripts, setTranscripts] = useState(()=>DB.getData("transcripts"));
-  const [form, setForm] = useState({studentId:"",semester:"",courses:"",gpa:""});
-  const [ok, setOk] = useState("");
+  const isStaff = user.role==="admin" || user.role==="teacher";
+  const [transcripts, setTranscripts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({ studentid:"", semester:"", totalgpa:"" });
+  const [ok, setOk] = useState(""); const [err, setErr] = useState("");
 
-  const generate = () => {
-    if (!form.studentId||!form.semester) return;
-    const t = { id:Date.now().toString(), studentId:form.studentId, semester:form.semester, gpa:form.gpa, courses:form.courses, generatedDate:new Date().toISOString().slice(0,10), generatedBy:user.name };
-    const updated = [...transcripts, t]; DB.setData("transcripts",updated); setTranscripts(updated);
-    setForm({studentId:"",semester:"",courses:"",gpa:""}); setOk("Official Transcript generated."); setTimeout(()=>setOk(""),4000);
+  const loadStudent = async () => {
+    if (!user.studentid) return;
+    setLoading(true); setErr("");
+    try {
+      const res = await api.getTranscript(user.studentid);
+      setTranscripts(res.data || []);
+    } catch (e) { setErr(e.message); setTranscripts([]); }
+    finally { setLoading(false); }
   };
 
-  if (isAdmin) return (
+  useEffect(() => { if (!isStaff) loadStudent(); /* eslint-disable-next-line */ }, []);
+
+  const generate = async () => {
+    if (!form.studentid || !form.semester || !form.totalgpa) return setErr("All fields required.");
+    setErr("");
+    try {
+      await api.generateTranscript({
+        teacherid: user.teacherid || user.userid,
+        adminid: user.userid,
+        studentid: Number(form.studentid),
+        semester: form.semester,
+        totalgpa: Number(form.totalgpa),
+      });
+      setForm({ studentid:"", semester:"", totalgpa:"" });
+      setOk("Transcript generated."); setTimeout(()=>setOk(""),4000);
+    } catch (e) { setErr(e.message); }
+  };
+
+  if (isStaff) return (
     <div className="fade-in">
       <div className="page-header">
         <div className="header-content" style={{ borderRadius: "var(--radius-lg)" }}>
@@ -1057,37 +1267,22 @@ function Transcript({ user }) {
           <p className="page-subtitle">Publish certified academic progression records</p>
         </div>
       </div>
-      
       <div className="card" style={{ maxWidth: 660 }}>
-        {ok&&<div className="alert alert-success"><Icons.CheckCircle />{ok}</div>}
-        
+        {ok && <div className="alert alert-success"><Icons.CheckCircle />{ok}</div>}
+        {err && <div className="alert alert-error"><Icons.CheckCircle />{err}</div>}
         <div className="form-grid">
-          <div className="form-group">
-            <label>Subject Entry</label>
-            <select className="input-field" value={form.studentId} onChange={e=>setForm(f=>({...f,studentId:e.target.value}))}>
-              <option value="">Select an individual...</option>
-              {students.map(s=><option key={s.id} value={s.id}>{s.name} ({s.rollno||"—"})</option>)}
-            </select>
-          </div>
-          <div className="form-group"><label>Academic Cohort</label><input className="input-field" placeholder="e.g. Spring 2025" value={form.semester} onChange={e=>setForm(f=>({...f,semester:e.target.value}))} /></div>
+          <div className="form-group"><label>Student ID</label><input className="input-field" type="number" placeholder="e.g. 1" value={form.studentid} onChange={e=>setForm(f=>({...f,studentid:e.target.value}))} /></div>
+          <div className="form-group"><label>Semester</label><input className="input-field" placeholder="e.g. Spring 2025" value={form.semester} onChange={e=>setForm(f=>({...f,semester:e.target.value}))} /></div>
         </div>
-        
-        <div className="form-group" style={{ marginBottom: 20 }}>
-          <label>Validated Credits (Delimited)</label>
-          <input className="input-field" placeholder="e.g. Object Oriented Programming, Data Structures, Calculus" value={form.courses} onChange={e=>setForm(f=>({...f,courses:e.target.value}))} />
-        </div>
-        
         <div className="form-group" style={{ maxWidth: "35%", marginBottom: 24 }}>
-          <label>Cumulative Metric (GPA)</label>
-          <input className="input-field" type="number" step="0.01" min="0" max="4" placeholder="e.g. 3.75" value={form.gpa} onChange={e=>setForm(f=>({...f,gpa:e.target.value}))} style={{ fontSize: 16, fontWeight: 600, color: "var(--primary)" }} />
+          <label>Total GPA</label>
+          <input className="input-field" type="number" step="0.01" min="0" max="4" placeholder="e.g. 3.75" value={form.totalgpa} onChange={e=>setForm(f=>({...f,totalgpa:e.target.value}))} style={{ fontSize: 16, fontWeight: 600, color: "var(--primary)" }} />
         </div>
-        
-        <button className="btn-primary" onClick={generate}>Authorize Certification</button>
+        <button className="btn-primary" onClick={generate}>Generate Transcript</button>
       </div>
     </div>
   );
 
-  const mine = transcripts.filter(t=>t.studentId===user.id);
   return (
     <div className="fade-in">
       <div className="page-header">
@@ -1096,42 +1291,27 @@ function Transcript({ user }) {
           <p className="page-subtitle">Certified transcript of institutional progress</p>
         </div>
       </div>
-      
-      {mine.length===0 ? 
+      {err && <div className="alert alert-error"><Icons.CheckCircle />{err}</div>}
+      {loading ? <div className="card empty-state"><div className="empty-text">Loading...</div></div>
+      : transcripts.length===0 ? 
         <div className="card empty-state">
           <div style={{fontSize: 48, opacity: 0.2, marginBottom: 16}}><Icons.Document /></div>
-          <div className="empty-text">No formal records have been archived.</div>
+          <div className="empty-text">No transcripts have been generated yet.</div>
         </div>
       : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))", gap: 24 }}>
-          {mine.map(t=>(
-            <div className="card" key={t.id} style={{ marginBottom: 0, borderTop: "4px solid var(--text-main)" }}>
+          {transcripts.map(t=>(
+            <div className="card" key={t.transcriptid} style={{ marginBottom: 0, borderTop: "4px solid var(--text-main)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
                 <div>
                   <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text-main)", letterSpacing: "-0.5px" }}>{t.semester}</div>
-                  <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4, fontWeight: 500 }}>Archived: {t.generatedDate}</div>
+                  <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4, fontWeight: 500 }}>Transcript #{t.transcriptid}</div>
                 </div>
-                {t.gpa && (
+                {t.totalgpa && (
                   <div style={{ textAlign: "right", background: "var(--bg-app)", padding: "8px 16px", borderRadius: "var(--radius-md)", border: "1px solid var(--border-light)" }}>
-                    <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "var(--text-muted)", letterSpacing: "0.1em" }}>Metric</div>
-                    <div style={{ fontSize: 24, fontWeight: 800, color: "var(--text-main)", lineHeight: 1, marginTop: 4 }}>{t.gpa}</div>
+                    <div style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 700, color: "var(--text-muted)", letterSpacing: "0.1em" }}>GPA</div>
+                    <div style={{ fontSize: 24, fontWeight: 800, color: "var(--text-main)", lineHeight: 1, marginTop: 4 }}>{t.totalgpa}</div>
                   </div>
                 )}
-              </div>
-              
-              <div style={{ border: "1px solid var(--border-light)", borderRadius: "var(--radius-sm)" }}>
-                <div style={{ background: "var(--bg-app)", padding: "10px 16px", borderBottom: "1px solid var(--border-light)", fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: "0.05em" }}>Modules Validated</div>
-                <div style={{ padding: "16px", fontSize: 14, color: "var(--text-main)", lineHeight: 1.8 }}>
-                  {t.courses ? t.courses.split(",").map((course, idx) => (
-                    <div key={idx} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ width: 4, height: 4, background: "var(--primary)", borderRadius: "50%" }} /> 
-                      {course.trim()}
-                    </div>
-                  )) : "None stipulated."}
-                </div>
-              </div>
-              
-              <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 20, textAlign: "right", borderTop: "1px dashed var(--border-light)", paddingTop: 16 }}>
-                Certified authority: <strong style={{color:"var(--text-main)"}}>{t.generatedBy}</strong>
               </div>
             </div>
           ))}
@@ -1143,18 +1323,38 @@ function Transcript({ user }) {
 
 /* ── HONOR LIST ───────────────────────────────────────────────── */
 function HonorList({ user }) {
-  const canManage = user.role==="admin"||user.role==="teacher";
-  const students = DB.getUsers().filter(u=>u.role==="student");
-  const [list, setList] = useState(()=>DB.getData("honor_list"));
-  const [form, setForm] = useState({studentId:"",title:"",semester:"",gpa:"",description:""});
-  const [ok, setOk] = useState("");
+  const canManage = user.role==="admin" || user.role==="teacher";
+  const [list, setList] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({ studentid:"", title1:"", desc1:"", semester:"", gpa:"" });
+  const [ok, setOk] = useState(""); const [err, setErr] = useState("");
 
-  const add = () => {
-    if (!form.studentId||!form.title.trim()) return;
-    const s = students.find(x=>x.id===form.studentId);
-    const entry = { id:Date.now().toString(), studentId:form.studentId, studentName:s?.name||"—", rollno:s?.rollno||"—", title:form.title.trim(), semester:form.semester, gpa:form.gpa, description:form.description.trim(), date:new Date().toISOString().slice(0,10) };
-    const updated = [...list, entry]; DB.setData("honor_list",updated); setList(updated);
-    setForm({studentId:"",title:"",semester:"",gpa:"",description:""}); setOk("Distinction officially recorded."); setTimeout(()=>setOk(""),4000);
+  const load = async () => {
+    setLoading(true); setErr("");
+    try {
+      const res = await api.getHonorList();
+      setList(res.data || []);
+    } catch (e) { setErr(e.message); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const add = async () => {
+    if (!form.studentid || !form.title1.trim()) return setErr("Student ID and title required.");
+    setErr("");
+    try {
+      await api.addAchievement({
+        studentid: Number(form.studentid),
+        title1: form.title1.trim(),
+        desc1: form.desc1.trim(),
+        semester: form.semester,
+        gpa: Number(form.gpa) || 0,
+      });
+      setForm({ studentid:"", title1:"", desc1:"", semester:"", gpa:"" });
+      setOk("Achievement recorded."); setTimeout(()=>setOk(""),4000);
+      load();
+    } catch (e) { setErr(e.message); }
   };
 
   return (
@@ -1165,45 +1365,37 @@ function HonorList({ user }) {
           <p className="page-subtitle">Formal recognition of institutional excellence</p>
         </div>
       </div>
-      
+
       {canManage && (
         <div className="card" style={{ maxWidth: 660 }}>
-          <div className="card-title"><Icons.Trophy /> Consecrate Merit</div>
-          {ok&&<div className="alert alert-success"><Icons.CheckCircle />{ok}</div>}
-          
+          <div className="card-title"><Icons.Trophy /> Add Achievement</div>
+          {ok && <div className="alert alert-success"><Icons.CheckCircle />{ok}</div>}
+          {err && <div className="alert alert-error"><Icons.CheckCircle />{err}</div>}
           <div className="form-grid">
-            <div className="form-group">
-              <label>Nominee</label>
-              <select className="input-field" value={form.studentId} onChange={e=>setForm(f=>({...f,studentId:e.target.value}))}>
-                <option value="">Select registry profile...</option>
-                {students.map(s=><option key={s.id} value={s.id}>{s.name} ({s.rollno||"—"})</option>)}
-              </select>
-            </div>
-            <div className="form-group"><label>Distinction Title</label><input className="input-field" placeholder="e.g. Dean's Commendation" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} /></div>
+            <div className="form-group"><label>Student ID</label><input className="input-field" type="number" placeholder="e.g. 1" value={form.studentid} onChange={e=>setForm(f=>({...f,studentid:e.target.value}))} /></div>
+            <div className="form-group"><label>Title</label><input className="input-field" placeholder="e.g. Dean's List" value={form.title1} onChange={e=>setForm(f=>({...f,title1:e.target.value}))} /></div>
           </div>
-          
           <div className="form-grid">
-            <div className="form-group"><label>Cohort / Period</label><input className="input-field" placeholder="e.g. Spring 2025" value={form.semester} onChange={e=>setForm(f=>({...f,semester:e.target.value}))} /></div>
+            <div className="form-group"><label>Semester</label><input className="input-field" placeholder="e.g. Spring 2025" value={form.semester} onChange={e=>setForm(f=>({...f,semester:e.target.value}))} /></div>
             <div className="form-group"><label>Qualifying GPA</label><input className="input-field" type="number" step="0.01" placeholder="e.g. 3.9" value={form.gpa} onChange={e=>setForm(f=>({...f,gpa:e.target.value}))} /></div>
           </div>
-          
           <div className="form-group" style={{ marginBottom: 24 }}>
-            <label>Citation Abstract <span style={{fontWeight:400, color:"var(--text-muted)"}}>(Optional)</span></label>
-            <input className="input-field" placeholder="Formal justification for the award..." value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} />
+            <label>Description <span style={{fontWeight:400, color:"var(--text-muted)"}}>(Optional)</span></label>
+            <input className="input-field" placeholder="Brief description..." value={form.desc1} onChange={e=>setForm(f=>({...f,desc1:e.target.value}))} />
           </div>
-          
           <button className="btn-primary" onClick={add}>Publish Distinction</button>
         </div>
       )}
-      
-      {list.length===0 ? 
+
+      {loading ? <div className="card empty-state"><div className="empty-text">Loading...</div></div>
+      : list.length===0 ? 
         <div className="card empty-state">
           <div style={{fontSize: 48, opacity: 0.2, marginBottom: 16}}><Icons.Trophy /></div>
-          <div className="empty-text">No distinctions have been archived for the current period.</div>
+          <div className="empty-text">No distinctions have been recorded yet.</div>
         </div>
       : <div style={{ display: "grid", gap: 16 }}>
           {list.map((h,i)=> (
-            <div className="card" key={h.id} style={{ display: "flex", alignItems: "center", gap: 24, padding: "24px 32px", marginBottom: 0, borderLeft: i < 3 ? "4px solid var(--primary)" : "1px solid var(--border-light)" }}>
+            <div className="card" key={h.achievementid || i} style={{ display: "flex", alignItems: "center", gap: 24, padding: "24px 32px", marginBottom: 0, borderLeft: i < 3 ? "4px solid var(--primary)" : "1px solid var(--border-light)" }}>
               <div style={{ 
                   width: 56, height: 56, borderRadius: "var(--radius-sm)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
                   background: "var(--bg-app)",
@@ -1214,16 +1406,15 @@ function HonorList({ user }) {
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 6 }}>
-                  <span style={{ fontSize: 18, fontWeight: 800, color: "var(--text-main)", letterSpacing: "-0.5px" }}>{h.studentName}</span>
-                  <span className="badge badge-neutral" style={{ letterSpacing: "0.1em" }}>{h.rollno}</span>
+                  <span style={{ fontSize: 18, fontWeight: 800, color: "var(--text-main)", letterSpacing: "-0.5px" }}>{h.studentname || `Student #${h.studentid}`}</span>
+                  {h.rollnum && <span className="badge badge-neutral" style={{ letterSpacing: "0.1em" }}>{h.rollnum}</span>}
                 </div>
-                <div style={{ fontSize: 15, fontWeight: 600, color: "var(--primary)", marginBottom: 8 }}>{h.title}</div>
-                {h.description && <div style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 12, fontStyle: "italic" }}>"{h.description}"</div>}
-                
+                <div style={{ fontSize: 15, fontWeight: 600, color: "var(--primary)", marginBottom: 8 }}>{h.title1}</div>
+                {h.desc1 && <div style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 12, fontStyle: "italic" }}>"{h.desc1}"</div>}
                 {h.semester && (
                   <div style={{ fontSize: 12, color: "var(--text-muted)", display: "flex", gap: 20, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                     <span>Period: {h.semester}</span>
-                    {h.gpa && <span>Metric: <strong style={{color:"var(--text-main)"}}>{h.gpa}</strong></span>}
+                    {h.gpa && <span>GPA: <strong style={{color:"var(--text-main)"}}>{h.gpa}</strong></span>}
                   </div>
                 )}
               </div>
@@ -1274,14 +1465,14 @@ function getNav(role) {
 
 /* ── ROOT ─────────────────────────────────────────────────────── */
 export default function CampusConnect() {
-  const [user, setUser] = useState(() => DB.getSession());
+  const [user, setUser] = useState(() => Session.get());
   const [page, setPage] = useState("dashboard");
 
   useEffect(() => {
     console.log("System Initialized. Active Session:", user);
   }, []);
 
-  const logout = () => { DB.clearSession(); setUser(null); setPage("dashboard"); };
+  const logout = () => { Session.clear(); setUser(null); setPage("dashboard"); };
   const updateUser = u => setUser(u);
 
   if (!user) return <Auth onLogin={u=>{setUser(u);setPage("dashboard");}}/>;

@@ -23,7 +23,7 @@ const Icons = {
 
 /* ── STORAGE ──────────────────────────────────────────────────── */
 /* ── API CLIENT ───────────────────────────────────────────────── */
-const API_URL = "http://localhost:5000/api";
+const API_URL = "/api";
 
 async function apiCall(path, method = "GET", body) {
   const opts = { method, headers: { "Content-Type": "application/json" } };

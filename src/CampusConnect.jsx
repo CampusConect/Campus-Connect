@@ -1160,7 +1160,6 @@ function HonorList({ user }) {
   return (
     <div className="fade-in">
       <div className="page-header">
-        <img className="banner-img" src="https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&w=1600&q=80" alt="Graduation" style={{ height: 160 }} />
         <div className="header-content">
           <h1 className="page-title">Merit & Distinction Registry</h1>
           <p className="page-subtitle">Formal recognition of institutional excellence</p>

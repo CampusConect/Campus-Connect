@@ -11,5 +11,5 @@ app.use('/api',routes)
 app.get('/',(req,res)=>res.send('campus connect api is running'))
 
 const PORT = process.env.PORT || 5000
-app.listen(PORT,()=>console.log('server running on port'))
+app.listen(PORT, '0.0.0.0', ()=>console.log('server running on port ' + PORT))
 db.connect()

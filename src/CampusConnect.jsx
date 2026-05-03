@@ -775,8 +775,8 @@ function Court({ user }) {
         studentid: user.studentid,
         sport: court,
         bookingdate: date,
-        starttime: SLOTS[selected].start,
-        endtime: SLOTS[selected].end,
+        starttime: `1970-01-01T${SLOTS[selected].start}Z`,
+        endtime: `1970-01-01T${SLOTS[selected].end}Z`,
       });
       setOk(`${court} booked for ${SLOTS[selected].label}.`);
       setSelected(null);
@@ -925,7 +925,7 @@ function CourseReg({ user }) {
       await api.registerCourse({
         studentid: user.studentid,
         courseid: course.courseid,
-        semester: user.semester || 1,
+        semester: String(user.semester || 1),
       });
       setOk(`Enrolled in ${course.coursecode}.`); setTimeout(()=>setOk(""), 4000);
       load();
@@ -1251,7 +1251,7 @@ function Transcript({ user }) {
         teacherid: user.teacherid || user.userid,
         adminid: user.userid,
         studentid: Number(form.studentid),
-        semester: form.semester,
+        semester: Number(form.semester) || 1,
         totalgpa: Number(form.totalgpa),
       });
       setForm({ studentid:"", semester:"", totalgpa:"" });
@@ -1348,7 +1348,7 @@ function HonorList({ user }) {
         studentid: Number(form.studentid),
         title1: form.title1.trim(),
         desc1: form.desc1.trim(),
-        semester: form.semester,
+        semester: Number(form.semester) || 1,
         gpa: Number(form.gpa) || 0,
       });
       setForm({ studentid:"", title1:"", desc1:"", semester:"", gpa:"" });

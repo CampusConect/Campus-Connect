@@ -59,13 +59,18 @@ class AuthService {
     }
 
     async updatePersonalInfo(userid, name, email, password) {
-        const existingUser = await this.userRepo.getUserByEmail(email)
-        if (existingUser && existingUser.userid !== userid) {
-            throw new Error('Email already taken')
-        }
-        await this.userRepo.updateUser(userid, name, email, password)
-        return { message: 'Personal info updated successfully' }
+    const existingUser = await this.userRepo.getUserByEmail(email)
+    if (existingUser && existingUser.userid !== userid) {
+        throw new Error('Email already taken')
     }
+    // if no new password, keep the old one
+    if (!password) {
+        const currentUser = await this.userRepo.getUserById(userid)
+        password = currentUser.password
+    }
+    await this.userRepo.updateUser(userid, name, email, password)
+    return { message: 'Personal info updated successfully' }
+}
 }
 
 module.exports = new AuthService()

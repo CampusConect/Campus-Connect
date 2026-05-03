@@ -122,6 +122,69 @@ Campus-Connect-main/
 - Frontend dev server: `http://localhost:5173`
 
 ---
+
+## SOLID Principles
+
+The backend is organized into three layers — **routes → services → repositories** — and this layering is what allows it to follow the SOLID principles.
+
+### S — Single Responsibility Principle
+Every file has exactly one job:
+- `repositories/courtbooking.js` only talks to the database (raw SQL queries).
+- `services/courtBookingService.js` only handles business rules (e.g. "no booking in the past", "no overlapping slots").
+- `routes/auth.js` only handles HTTP — reading the request body and sending a JSON response.
+
+If the database changes, only the repository file changes. If a business rule changes, only the service changes.
+
+### O — Open/Closed Principle
+Adding a new feature does not require modifying existing code. To add a new entity (e.g. *Library Books*), you create a new repository, a new service, and a new route. The existing files for attendance, marks, complaints, etc. stay untouched.
+
+### L — Liskov Substitution Principle
+All repositories follow the same shape — a class with `create / get / update / delete` style methods that return data the same way. Any service expecting "a repository" can work with any repository class without breaking, because they are interchangeable in behavior.
+
+### I — Interface Segregation Principle
+Each service only depends on the repositories it actually needs. For example, `complaintService.js` injects `Complaint` and `Student` repositories — it doesn't see the fee, marks, or course repos. No service is forced to know about methods it doesn't use.
+
+### D — Dependency Inversion Principle
+High-level code (services) does not directly create database connections. Instead, services depend on **repository abstractions**, and repositories depend on a shared `db` connection from `config/db.js`. The `db` module can be swapped (e.g. point to a different server) without touching any service or route.
+
+---
+
+## Design Patterns
+
+### 1. Singleton Pattern — `config/db.js`
+The database connection is a singleton: only one pool is ever created, and every repository reuses it. This avoids opening multiple expensive connections to SQL Server.
+
+```js
+class database {
+    constructor() {
+        if (database.instance) return database.instance
+        this.pool = null
+        database.instance = this
+    }
+    async connect() {
+        if (this.pool) return this.pool
+        this.pool = await sql.connect(config)
+        return this.pool
+    }
+}
+```
+
+### 2. Repository Pattern — `backend/repositories/`
+Each repository encapsulates the SQL for one entity (`student.js`, `course.js`, `courtbooking.js`, etc.). The rest of the app never writes raw SQL — it just calls methods like `bookingRepo.bookCourt(...)`. This isolates database details from business logic.
+
+### 3. Service Layer Pattern — `backend/services/`
+Each service handles the business rules between the route layer and the repository layer. For example, `courtBookingService.bookCourt(...)` checks that the date isn't in the past, the student exists, and the slot isn't double-booked — *before* calling the repository to insert.
+
+### 4. Module / Façade Pattern — `src/CampusConnect.jsx`
+The frontend's `api` object exposes one clean call per backend endpoint (`api.bookCourt`, `api.viewFee`, etc.). React components never write `fetch(...)` directly — they just call `api.*`. This hides URL construction, JSON parsing, and error handling behind a simple façade.
+
+### 5. Strategy Pattern — Login flow
+The `Auth` component picks a different login function (`api.loginStudent`, `api.loginTeacher`, `api.loginAdmin`) at runtime based on the selected role tab. The calling code stays the same — only the strategy changes.
+
+### 6. Observer Pattern (via React state) — UI auto-updates
+React's `useState` + `useEffect` implement an observer relationship: when state changes (e.g. a new booking is made), components subscribed to that state automatically re-render. This is why the booking table refreshes the moment a new booking succeeds.
+
+---
 ---
 
 # React + Vite

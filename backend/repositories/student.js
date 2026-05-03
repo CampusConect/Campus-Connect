@@ -12,7 +12,11 @@ class student{
                 values(@userid,@rollnum,@program,@semester)`)
         return result
     }
+// // to fix error as multiple file has StudentByID not student ID we had to change it all there
 
+    async getstudentbyid(studentid){
+    return await this.getStudentById(studentid)
+}
     async getStudentByUserId(userid){
         const pool=await db.connect()
         const result=await pool.request()

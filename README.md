@@ -151,8 +151,8 @@ High-level code (services) does not directly create database connections. Instea
 
 ## Design Patterns
 
-### 1. Singleton Pattern — `config/db.js`
-The database connection is a singleton: only one pool is ever created, and every repository reuses it. This avoids opening multiple expensive connections to SQL Server.
+### 1. Singleton Pattern — `backend/config/db.js`
+The database connection is a singleton: only one connection pool is ever created, and every repository reuses it. This avoids opening multiple expensive connections to SQL Server.
 
 ```js
 class database {
@@ -169,20 +169,16 @@ class database {
 }
 ```
 
-### 2. Repository Pattern — `backend/repositories/`
-Each repository encapsulates the SQL for one entity (`student.js`, `course.js`, `courtbooking.js`, etc.). The rest of the app never writes raw SQL — it just calls methods like `bookingRepo.bookCourt(...)`. This isolates database details from business logic.
+### 2. Observer Pattern — React state in `src/CampusConnect.jsx`
+React's `useState` and `useEffect` form an observer relationship between data and UI. Components "subscribe" to a piece of state, and when that state changes, they automatically re-render. For example, when a new court booking succeeds, the booking list state updates and every component watching it (the table, the slot grid) refreshes on its own — no manual DOM updates.
 
-### 3. Service Layer Pattern — `backend/services/`
-Each service handles the business rules between the route layer and the repository layer. For example, `courtBookingService.bookCourt(...)` checks that the date isn't in the past, the student exists, and the slot isn't double-booked — *before* calling the repository to insert.
+```js
+const [bookings, setBookings] = useState([]);
 
-### 4. Module / Façade Pattern — `src/CampusConnect.jsx`
-The frontend's `api` object exposes one clean call per backend endpoint (`api.bookCourt`, `api.viewFee`, etc.). React components never write `fetch(...)` directly — they just call `api.*`. This hides URL construction, JSON parsing, and error handling behind a simple façade.
+useEffect(() => { loadBookings(); }, []);  // observer subscribes on mount
 
-### 5. Strategy Pattern — Login flow
-The `Auth` component picks a different login function (`api.loginStudent`, `api.loginTeacher`, `api.loginAdmin`) at runtime based on the selected role tab. The calling code stays the same — only the strategy changes.
-
-### 6. Observer Pattern (via React state) — UI auto-updates
-React's `useState` + `useEffect` implement an observer relationship: when state changes (e.g. a new booking is made), components subscribed to that state automatically re-render. This is why the booking table refreshes the moment a new booking succeeds.
+// when setBookings(...) is called, every component reading `bookings` re-renders automatically
+```
 
 ---
 ---

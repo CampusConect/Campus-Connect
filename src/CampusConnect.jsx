@@ -23,7 +23,7 @@ const Icons = {
 
 /* ── STORAGE ──────────────────────────────────────────────────── */
 /* ── API CLIENT ───────────────────────────────────────────────── */
-const API_URL = "/api";
+const API_URL = "https://campus-connect-production-971b.up.railway.app/api";
 
 async function apiCall(path, method = "GET", body) {
   const opts = { method, headers: { "Content-Type": "application/json" } };

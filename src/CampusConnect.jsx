@@ -103,6 +103,9 @@ function Auth({ onLogin }) {
     if (r === "teacher" && res.teacher) {
       return { ...base, teacherid: res.teacher.teacherid, dept: res.teacher.department };
     }
+    if (r === "admin" && res.admin) {
+      return { ...base, adminid: res.admin.adminid };
+    }
     return base;
   };
 

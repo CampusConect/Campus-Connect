@@ -55,6 +55,8 @@ class AuthService {
         if (!user || user.password !== password || user.role1 !== 'admin') {
             throw new Error('Invalid email or password')
         }
+        const admin =await
+        this.adminRepo.getAdminByUserId(user.userid)
         return { message: 'Login successful', user }
     }
 

@@ -82,6 +82,7 @@ const api = {
 
   addAchievement:  (b)   => apiCall("/achievement/add", "POST", b),
   getAchievements: (sid) => apiCall(`/achievement/view/${sid}`),
+  getAllAchievements: () => apiCall("/achievement/all"),
   getHonorList:    ()    => apiCall("/honor/view"),
 };
 
@@ -1335,7 +1336,7 @@ function HonorList({ user }) {
   const load = async () => {
     setLoading(true); setErr("");
     try {
-      const res = await api.getHonorList();
+      const res = canManage ? await api.getAllAchievements() : await api.getHonorList();
       setList(res.data || []);
     } catch (e) { setErr(e.message); }
     finally { setLoading(false); }
@@ -1379,7 +1380,7 @@ function HonorList({ user }) {
             <div className="form-group"><label>Title</label><input className="input-field" placeholder="e.g. Dean's List" value={form.title1} onChange={e=>setForm(f=>({...f,title1:e.target.value}))} /></div>
           </div>
           <div className="form-grid">
-            <div className="form-group"><label>Semester</label><input className="input-field" placeholder="e.g. Spring 2025" value={form.semester} onChange={e=>setForm(f=>({...f,semester:e.target.value}))} /></div>
+            <div className="form-group"><label>Semester</label><input className="input-field" type="number" placeholder="e.g. 5" value={form.semester} onChange={e=>setForm(f=>({...f,semester:e.target.value}))} /></div>
             <div className="form-group"><label>Qualifying GPA</label><input className="input-field" type="number" step="0.01" placeholder="e.g. 3.9" value={form.gpa} onChange={e=>setForm(f=>({...f,gpa:e.target.value}))} /></div>
           </div>
           <div className="form-group" style={{ marginBottom: 24 }}>

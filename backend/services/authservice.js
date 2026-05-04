@@ -57,7 +57,7 @@ class AuthService {
         }
         const admin =await
         this.adminRepo.getAdminByUserId(user.userid)
-        return { message: 'Login successful', user }
+        return { message: 'Login successful', user, admin }
     }
 
     async updatePersonalInfo(userid, name, email, password) {

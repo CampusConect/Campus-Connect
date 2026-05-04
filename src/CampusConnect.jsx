@@ -601,8 +601,8 @@ function Complaints({ user }) {
                   <tr key={c.complaintid}>
                     <td style={{fontWeight:500}}>#{c.complaintid}</td>
                     <td>{c.studentid}</td>
-                    <td style={{maxWidth:400}}>{c.description}</td>
-                    <td>{c.complaintdate ? new Date(c.complaintdate).toLocaleDateString() : "—"}</td>
+                    <td style={{maxWidth:400}}>{c.description1}</td>
+                    <td>{c.complaintdate ? new Date(c.datesubmitted).toLocaleDateString() : "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -642,8 +642,8 @@ function Complaints({ user }) {
                 {all.map(c=>(
                   <tr key={c.complaintid}>
                     <td style={{fontWeight:500}}>#{c.complaintid}</td>
-                    <td style={{maxWidth:400}}>{c.description}</td>
-                    <td>{c.complaintdate ? new Date(c.complaintdate).toLocaleDateString() : "—"}</td>
+                    <td style={{maxWidth:400}}>{c.description1}</td>
+                    <td>{c.complaintdate ? new Date(c.datesubmitted).toLocaleDateString() : "—"}</td>
                   </tr>
                 ))}
               </tbody>

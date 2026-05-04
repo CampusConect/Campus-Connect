@@ -1092,7 +1092,7 @@ function Fee({ user }) {
     setErr("");
     try {
       await api.generateFee({
-        adminid: user.userid,
+        adminid: user.adminid,
         studentid: Number(form.studentid),
         duedate: form.duedate,
       });
@@ -1252,7 +1252,7 @@ function Transcript({ user }) {
     try {
       await api.generateTranscript({
         teacherid: user.teacherid || user.userid,
-        adminid: user.userid,
+        adminid: user.adminid,
         studentid: Number(form.studentid),
         semester: Number(form.semester) || 1,
         totalgpa: Number(form.totalgpa),

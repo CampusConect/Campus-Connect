@@ -311,10 +311,9 @@ router.post('/achievement/add', async (req, res) => {
     }
 })
 
-router.get('/achievement/view/:studentid', async (req, res) => {
-    const { studentid } = req.params
+router.get('/achievement/all', async (req, res) => {
     try {
-        const result = await achievementService.getAchievementsByStudent(parseInt(studentid))
+        const result = await achievementService.getAllAchievements()
         res.json({ data: result })
     } catch (err) {
         res.status(500).json({ error: err.message })
